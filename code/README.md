@@ -3,3 +3,5 @@ The Flow Computation Model is the [PWC-Net model.](https://arxiv.org/abs/1709.02
 
 You will need to install the Correlation Activations layer used by PWC-Net.
 Follow the instructions [here.](https://github.com/SreenivasVRao/SuperSloMo-PyTorch/tree/master/code/SuperSloMo/external_packages/correlation-pytorch-master)
+
+The optical flow visualization is possible using Johannes Oswald's [flow-code.](https://github.com/Johswald/flow-code-python) You will need to build from source however.
