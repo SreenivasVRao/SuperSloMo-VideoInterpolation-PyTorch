@@ -4,3 +4,5 @@ Run the following commands in this folder:
 `unzip DeepVideoDeblurring_Dataset.zip`
 
 
+`curl -fSsl http://ci2cv.net/nfs/Get_NFS.sh | bash -`
+

@@ -7,7 +7,7 @@ import torch
 
 class InterpolationModel(nn.Module):
 
-    def __init__(self, args=None, batch_norm=False, verbose=True):
+    def __init__(self, args=None, batch_norm=False, verbose=False):
         super(InterpolationModel, self).__init__()
         self.batchNorm = batch_norm
         self.args = args
@@ -280,7 +280,8 @@ class InterpolationModel(nn.Module):
         input_tensor = torch.cat([img_1, warped_img_1t, est_flow_t1,
                                   est_flow_t0, warped_img_0t, img_0], dim=1)
 
-        print "Generated Input tensor of shape:", input_tensor.shape
+        if self.verbose:
+            print "Generated Input tensor of shape:", input_tensor.shape
 
         return input_tensor
 
@@ -405,12 +406,22 @@ class InterpolationModel(nn.Module):
         total_loss = lambda_r * loss_reconstr + lambda_s * loss_smooth + \
                      lambda_w * loss_warp + lambda_p * loss_perceptual
 
-        return total_loss
+        return total_loss, (loss_reconstr, loss_perceptual, loss_smooth, loss_warp)
 
 
-def flow_interpolator():
-    model = InterpolationModel(verbose=False)
+def flow_interpolator(path):
+    model = InterpolationModel()
+    if path is not None:
+        data = torch.load(path)
+        if 'stage2_state_dict' in data.keys():
+            model.load_state_dict(data['stage2_state_dict'])
+        else:
+            model.load_state_dict(data)
+        print "Loaded weights for Flow Interpolator: ", path
+    else:
+        print "Not loading weights for Flow Interpolator."
     return model
+
 
 
 if __name__=='__main__':

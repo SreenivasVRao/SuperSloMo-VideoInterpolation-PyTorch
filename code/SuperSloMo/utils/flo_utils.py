@@ -46,14 +46,18 @@ def write(filename, uv):
 
 
 if __name__ == '__main__':
-    ref_flo_01 = read("/media/sreenivas/Data/UMASS/Thesis/code/SuperSloMo/tmp/pwc_flow_01.flo")
-    ref_flo_10 = read("/media/sreenivas/Data/UMASS/Thesis/code/SuperSloMo/tmp/pwc_flow_10.flo")
+    ref_flo_01 = read("/media/sreenivas/Data/UMASS/Thesis/code/SuperSloMo/tmp/pwc_ref_01.flo")
+    ref_flo_10 = read("/media/sreenivas/Data/UMASS/Thesis/code/SuperSloMo/tmp/pwc_ref_10.flo")
 
-    custom_flo_01 = read("/media/sreenivas/Data/UMASS/Thesis/code/SuperSloMo/tmp/custom_flow01.flo")
-    custom_flo_10 = read("/media/sreenivas/Data/UMASS/Thesis/code/SuperSloMo/tmp/custom_flow10.flo")
+    custom_flo_01 = read("/media/sreenivas/Data/UMASS/Thesis/code/SuperSloMo/tmp/cv_ref_01.flo")
+    custom_flo_10 = read("/media/sreenivas/Data/UMASS/Thesis/code/SuperSloMo/tmp/cv_ref_10.flo")
 
     print(np.linalg.norm(custom_flo_01 - ref_flo_01))
     print(np.linalg.norm(custom_flo_10 - ref_flo_10))
 
-    ref_flo = read("/media/sreenivas/Data/UMASS/Thesis/code/SuperSloMo/tmp/reference_frame_0010.flo")
-    print(np.linalg.norm(ref_flo_01 - ref_flo))
+    custom_flo_01 = read("/media/sreenivas/Data/UMASS/Thesis/code/SuperSloMo/tmp/test_ref_01.flo")
+    custom_flo_10 = read("/media/sreenivas/Data/UMASS/Thesis/code/SuperSloMo/tmp/test_ref_10.flo")
+
+    print(np.linalg.norm(custom_flo_01 - ref_flo_01))
+    print(np.linalg.norm(custom_flo_10 - ref_flo_10))
+

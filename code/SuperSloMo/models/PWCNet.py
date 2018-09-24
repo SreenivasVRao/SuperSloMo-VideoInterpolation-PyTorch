@@ -492,6 +492,9 @@ def pwc_dc_net(path=None):
         else:
             model.load_state_dict(data)
         print "Loaded weights for Flow Computation: ", path
+    else:
+        print "Not loading weights for Flow Computation."
+
     return model
 
 

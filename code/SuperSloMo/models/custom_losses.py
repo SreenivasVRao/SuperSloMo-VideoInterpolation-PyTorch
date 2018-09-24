@@ -9,17 +9,18 @@ class PerceptualLoss(nn.Module):
     def __init__(self, use_cuda=True):
         super(PerceptualLoss, self).__init__()
         self.vgg16 = torchvision.models.vgg16(pretrained=True)
+        for param in self.vgg16.parameters():
+            param.requires_grad = False
+        for param in self.parameters():
+            param.requires_grad = False
+
+        self.vgg16.eval()
 
         self.modulelist = list(self.vgg16.features.modules())
 
         self.modulelist = self.modulelist[1:23] # until conv4_3
 
-        for param in self.vgg16.parameters():
-            param.requires_grad = False
-
-        for param in self.parameters():
-            param.requires_grad = False
-
+        self.eval()
 
         if use_cuda:
             self.vgg16.cuda()
@@ -45,9 +46,10 @@ class SmoothnessLoss(nn.Module):
         super(SmoothnessLoss, self).__init__()
         if use_cuda:
             self.cuda()
-
         for param in self.parameters():
-            param.requires_grad=False
+            param.requires_grad = False
+
+        self.eval()
 
     def forward(self, x_input):
         gradient_flow = self.spatial_gradient(x_input) # gradient of the flow
@@ -84,17 +86,21 @@ class SmoothnessLoss(nn.Module):
 if __name__=='__main__':
 
     VGGLoss = PerceptualLoss()
+    print(VGGLoss.training)
+
     tensor_1 = torch.autograd.Variable(torch.randn([2, 3, 100, 100]), requires_grad=True).cuda()
     tensor_2 = torch.autograd.Variable(torch.randn([2, 3, 100, 100])).cuda()
     result = VGGLoss(tensor_1, tensor_2)
-    for param in VGGLoss.parameters():
-        print param.requires_grad
+    # for param in VGGLoss.parameters():
+    #     print param.requires_grad
     result.backward()
 
     loss_smooth = SmoothnessLoss()
+    print(loss_smooth.training)
     tensor_1 = torch.autograd.Variable(torch.randn([2, 3, 100, 100]), requires_grad=True).cuda()
     result = loss_smooth(tensor_1)
-    for param in loss_smooth.parameters():
-        print param.requires_grad
+    # for param in VGGLoss.parameters():
+    #     print param.requires_grad
+
     result.backward()
 
