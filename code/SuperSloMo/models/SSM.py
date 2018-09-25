@@ -48,7 +48,7 @@ class FullModel(nn.Module):
 
         return upsampled_flow
 
-    def forward(self, image_0, image_1, dims, scale_factors, t_interp=0.5):
+    def forward(self, image_0, image_1, dims, scale_factors, t_interp):
         img_tensor, flow_tensor = self.stage1_computations(image_0, image_1, dims, scale_factors)
 
         flowI_input = self.stage2_model.compute_inputs(img_tensor, flow_tensor, t=t_interp)

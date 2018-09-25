@@ -251,7 +251,7 @@ class InterpolationModel(nn.Module):
 
         return upsample12_out
 
-    def compute_inputs(self, img_tensor, flow_pred_tensor, t=0.5):
+    def compute_inputs(self, img_tensor, flow_pred_tensor, t):
         """
         Takes input and output from flow computation model, and required time step.
         Builds the required tensor for the interpolation model.
@@ -303,7 +303,7 @@ class InterpolationModel(nn.Module):
 
         return img_1, v_1t, dflow_t1, dflow_t0, v_0t, img_0
 
-    def compute_output_image(self, input_tensor, output_tensor, t=0.5):
+    def compute_output_image(self, input_tensor, output_tensor, t):
         """
         :param input_tensor: Input to flow interpolation model.
         :param output_tensor: Prediction from flow interpolation model
@@ -379,7 +379,7 @@ class InterpolationModel(nn.Module):
         return loss_smooth
 
     def compute_loss(self, img_tensor, flow_tensor, input_tensor,
-                     output_tensor, target_image, loss_weights, t=0.5):
+                     output_tensor, target_image, loss_weights, t):
         """
 
         :param img_tensor: Input to Flow Computation Model B, 6, H, W
@@ -398,10 +398,7 @@ class InterpolationModel(nn.Module):
         loss_smooth = self.get_smooth_loss(flow_tensor)
         loss_warp = self.get_warp_loss(img_tensor, flow_tensor, input_tensor, output_tensor, target_image)
 
-        if loss_weights is not None:
-            lambda_r, lambda_p, lambda_w, lambda_s = loss_weights
-        else:
-            lambda_r, lambda_p, lambda_w, lambda_s = (1, 1, 1, 1)
+        lambda_r, lambda_p, lambda_w, lambda_s = loss_weights
 
         total_loss = lambda_r * loss_reconstr + lambda_s * loss_smooth + \
                      lambda_w * loss_warp + lambda_p * loss_perceptual

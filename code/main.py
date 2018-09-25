@@ -1,6 +1,7 @@
 from SuperSloMo.models import SSM
-from SuperSloMo.utils import adobe_240fps
+from SuperSloMo.utils import adobe_240fps, metrics
 import datetime
+import numpy as np
 
 import torch.optim
 import torch
@@ -9,6 +10,7 @@ from torch.autograd import Variable
 from tensorboardX import SummaryWriter
 import os
 import ConfigParser
+
 
 def read_config(configpath='config.ini'):
     config = ConfigParser.RawConfigParser()
@@ -103,22 +105,31 @@ class SSM_Main:
         self.writer.add_scalars('Smoothness Loss', {split: loss_smooth.data[0]}, iteration)
         self.writer.add_scalars('Warping Loss', {split: loss_warp.data[0]}, iteration)
 
-    def forward_pass(self, aClip, dataset, split):
+    def forward_pass(self, npBatch, dataset, split, get_interpolation=False):
 
-        img_0, img_t, img_1 = self.get_batch(aClip)
+        img_0, img_t, img_1 = self.get_batch(npBatch)
 
         results = self.superslomo(img_0, img_t, dataset.dims, dataset.scale_factors, t=self.t_interp)
 
-        img_tensor, flow_tensor, flowI_input, flowI_output = results
-
+        flowC_input, flowC_output, flowI_input, flowI_output = results
         target_image = img_t
 
-        train_losses = self.superslomo.stage2_model.compute_loss(img_tensor, flow_tensor,
-                                                            flowI_input, flowI_output,
-                                                            target_image, self.loss_weights, t=0.5)
-        total_loss, individual_losses = train_losses
-        self.write_losses(total_loss, individual_losses, iter, split)
-        return total_loss, individual_losses
+        if get_interpolation:
+
+            output_image = self.superslomo.stage2_model.compute_output_image(flowI_input,
+                                                                             flowI_output,
+                                                                             self.t_interp)
+            return output_image, target_image
+
+        else:
+
+            train_losses = self.superslomo.stage2_model.compute_loss(flowC_input, flowC_output,
+                                                                     flowI_input, flowI_output,
+                                                                     target_image, self.loss_weights,
+                                                                     t=self.t_interp)
+            total_loss, individual_losses = train_losses
+            self.write_losses(total_loss, individual_losses, iter, split)
+            return total_loss, individual_losses
 
     def train(self):
 
@@ -134,23 +145,23 @@ class SSM_Main:
 
             print ("Epoch: ", epoch, " Iteration: ", iter)
 
-            for aClip in adobe_train.get_clips():
+            for train_batch in adobe_train.get_clips():
                 iter +=1
 
-                train_loss, _ = self.forward_pass(aClip, adobe_train, "TRAIN")
+                train_loss, _ = self.forward_pass(train_batch, adobe_train, "TRAIN")
 
                 optimizer.zero_grad()
                 train_loss.backward()
                 optimizer.step()
 
                 try:
-                    valClip = next(val_generator)
+                    val_batch = next(val_generator)
                 except StopIteration:
                     adobe_val = adobe_240fps.Reader(self.cfg, split="VAL")
                     val_generator = adobe_val.get_clips()
-                    valClip = next(val_generator)
+                    val_batch = next(val_generator)
 
-                self.forward_pass(valClip, adobe_val, "VAL")
+                self.forward_pass(val_batch, adobe_val, "VAL")
 
             if epoch%self.lr_period==0 and epoch>0:
                 self.learning_rate = self.learning_rate*self.lr_decay
@@ -170,6 +181,41 @@ class SSM_Main:
 
         self.writer.close()
 
+    def compute_metrics(self, dataset):
+        total_ssim = 0
+        total_IE = 0
+        total_PSNR = 0
+
+        nframes = 0
+
+        for a_batch in dataset.get_clips():
+            nframes += a_batch.shape[0]/3
+            est_image_t, gt_image_t = self.forward_pass(a_batch, dataset,
+                                                        split="TRAIN", get_interpolation=True)
+            est_image_t = est_image_t * 255.0
+
+            est_image_t = est_image_t.permute(0, 2, 3, 1) # BCHW -> BHWC
+            gt_image_t  = est_image_t.permute(0, 2, 3, 1) # BCHW -> BHWC
+
+            est_image_t = est_image_t.cpu().data.numpy()
+            gt_image_t  =  gt_image_t.cpu().data.numpy()
+
+            est_image_t = est_image_t.astype(np.uint8)
+            gt_image_t  =  gt_image_t.astype(np.uint8)
+
+            IE_scores = metrics.interpolation_error(est_image_t, gt_image_t)
+            ssim_scores = metrics.ssim(est_image_t, gt_image_t)
+            psnr_scores = metrics.psnr(est_image_t, gt_image_t)
+
+            total_IE   += np.sum(IE_scores)
+            total_ssim += np.sum(ssim_scores)
+            total_PSNR += np.sum(psnr_scores)
+
+        avg_IE = float(total_IE)/nframes
+        avg_ssim = float(total_ssim)/nframes
+        avg_PSNR = float(total_PSNR)/nframes
+
+        return avg_PSNR, avg_IE, avg_ssim
 
 
 
@@ -180,6 +226,20 @@ if __name__ == '__main__':
     model = SSM_Main(cfg)
 
     model.train()
+    adobe_train = adobe_240fps.Reader(cfg, split="TRAIN")
+    adobe_val = adobe_240fps.Reader(cfg, split="VAL")
+    adobe_test = adobe_240fps.Reader(cfg, split="TEST")
+
+    PSNR, IE, SSIM = model.compute_metrics(adobe_train)
+    print("ADOBE TRAIN: PSNR ", PSNR, " IE: ", IE, " SSIM: ", SSIM)
+
+    PSNR, IE, SSIM = model.compute_metrics(adobe_val)
+    print("ADOBE VAL: PSNR ", PSNR, " IE: ", IE, " SSIM: ", SSIM)
+
+    PSNR, IE, SSIM = model.compute_metrics(adobe_test)
+    print("ADOBE TEST: PSNR ", PSNR, " IE: ", IE, " SSIM: ", SSIM)
+
+
 
 
 ##################################################
