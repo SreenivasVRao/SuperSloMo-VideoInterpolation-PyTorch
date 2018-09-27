@@ -21,6 +21,12 @@ def read_config(configpath='config.ini'):
 class SSM_Main:
 
     def __init__(self, config):
+        """
+        Initializes various objects, and creates an instance of the model.
+        Creates a summary writer callback for tensorboard.
+        :param config: Config object.
+        """
+
         self.cfg = config
         self.get_hyperparams()
 
@@ -38,6 +44,10 @@ class SSM_Main:
         self.superslomo = self.load_model()
 
     def load_model(self):
+        """
+        Loads the models, optionally with weights, and optionally freezing individual stages.
+        :return: the SuperSloMo model.
+        """
 
         top_dir = self.cfg.get("PROJECT", "DIR")
         stage1_weights = None
@@ -71,6 +81,10 @@ class SSM_Main:
         return model
 
     def get_hyperparams(self):
+        """
+        Reads the config to get training hyperparameters.
+        :return:
+        """
         lambda_r = self.cfg.getfloat("TRAIN", "LAMBDA_R") # reconstruction loss weighting
         lambda_w = self.cfg.getfloat("TRAIN", "LAMBDA_W") # warp loss weighting
         lambda_s = self.cfg.getfloat("TRAIN", "LAMBDA_S") # smoothness loss weighting
@@ -85,7 +99,12 @@ class SSM_Main:
         self.t_interp = self.cfg.getfloat("TRAIN", "T_INTERP")
         self.save_every= self.cfg.getint("TRAIN", "SAVE_EVERY")
 
-    def get_batch(self, data):
+    def np2torch(self, data):
+        """
+        Converts numpy data into Torch Variable. B H W C
+        :param data:
+        :return: three tensors - BCHW I_0, I_t, I_1
+        """
         oneBatch = Variable(torch.from_numpy(data)).cuda().float()
 
         oneBatch = oneBatch.permute(0, 3, 1, 2)
@@ -96,6 +115,15 @@ class SSM_Main:
         return image_0, image_t, image_1
 
     def write_losses(self, total_loss, individual_losses, iteration, split):
+        """
+        Writes the losses to tensorboard for given iteration and split.
+
+        :param total_loss: Weighted sum of all losses.
+        :param individual_losses: Tuple of 4 losses.
+        :param iteration: Current iteration.
+        :param split: Train/Val,
+        :return:
+        """
 
         loss_reconstr, loss_perceptual, loss_smooth, loss_warp = individual_losses
 
@@ -105,9 +133,17 @@ class SSM_Main:
         self.writer.add_scalars('Smoothness Loss', {split: loss_smooth.data[0]}, iteration)
         self.writer.add_scalars('Warping Loss', {split: loss_warp.data[0]}, iteration)
 
-    def forward_pass(self, npBatch, dataset, split, get_interpolation=False):
+    def forward_pass(self, numpy_batch, dataset, split, get_interpolation=False):
+        """
+        :param numpy_batch: B H W C 0-255, np.uint8
+        :param dataset: dataset object with corresponding split.
+        :param split: "TRAIN"/"TEST"/"VAL"
+        :param get_interpolation: flag to return interpolation result
+        :return: if get_interpolation is set, returns interpolation result as BCHW Variable.
+        otherwise returns the losses.
+        """
 
-        img_0, img_t, img_1 = self.get_batch(npBatch)
+        img_0, img_t, img_1 = self.np2torch(numpy_batch)
 
         results = self.superslomo(img_0, img_t, dataset.dims, dataset.scale_factors, t=self.t_interp)
 
@@ -132,6 +168,11 @@ class SSM_Main:
             return total_loss, individual_losses
 
     def train(self):
+        """
+        Training schedule for the SuperSloMo architecture.
+
+        :return:
+        """
 
         optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.superslomo.parameters()),
                                      lr=self.learning_rate)
@@ -182,6 +223,11 @@ class SSM_Main:
         self.writer.close()
 
     def compute_metrics(self, dataset):
+        """
+        Computes PSNR, Interpolation Error, and SSIM scores for the given split of the dataset.
+        :param dataset:
+        :return: avg PSNR, avg IE, avg SSIM
+        """
         total_ssim = 0
         total_IE = 0
         total_PSNR = 0
@@ -221,7 +267,14 @@ class SSM_Main:
 
 if __name__ == '__main__':
 
-    cfg = read_config("./config.ini")
+    from argparse import ArgumentParser
+
+    parser = ArgumentParser()
+    parser.add_argument("-c", "--config", required=True,
+                        default="config.ini",
+                        help="Path to config.ini file.")
+    args = parser.parse_args()
+    cfg = read_config(args.config)
 
     model = SSM_Main(cfg)
 

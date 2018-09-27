@@ -141,7 +141,8 @@ class InterpolationModel(nn.Module):
     def define_losses(self):
         self.reconstr_loss_fn = nn.L1Loss()
         self.perceptual_loss_fn = PerceptualLoss()
-        self.smooth_loss_fn = SmoothnessLoss()
+        self.smooth_loss_1 = SmoothnessLoss()
+        self.smooth_loss_2 = SmoothnessLoss()
 
         self.warp_loss_1 = nn.L1Loss()
         self.warp_loss_2 = nn.L1Loss()
@@ -374,8 +375,20 @@ class InterpolationModel(nn.Module):
         loss_perceptual = self.perceptual_loss_fn(img, target_img)
         return loss_perceptual
 
-    def get_smooth_loss(self, flow_tensor):
-        loss_smooth = self.smooth_loss_fn(flow_tensor)
+    def get_smooth_loss(self, flow_tensor, image_tensor):
+        assert image_tensor.shape[1]==6, "Expected B 6 H W tensor."
+        assert flow_tensor.shape[1]==4, "Expected B 4 H W tensor."
+        img_0 = image_tensor[:, :3, ...] # first half of B 6 H W tensor
+        img_1 = image_tensor[:, 3:, ...] # second half
+
+        flow_01 = flow_tensor[:, :2, ...] # flow 0 -> 1
+        flow_10 = flow_tensor[:, 2:, ...] # flow 1 -> 0
+
+        loss_smooth_01 = self.smooth_loss_1(flow_01, img_0)
+        loss_smooth_10 = self.smooth_loss_2(flow_10, img_1)
+
+        loss_smooth = loss_smooth_01 + loss_smooth_10
+
         return loss_smooth
 
     def compute_loss(self, img_tensor, flow_tensor, input_tensor,
@@ -395,7 +408,7 @@ class InterpolationModel(nn.Module):
         interpolated_image = self.compute_output_image(input_tensor, output_tensor, t)
         loss_reconstr = self.get_reconstruction_loss(interpolated_image, target_image)
         loss_perceptual = self.get_perceptual_loss(interpolated_image, target_image)
-        loss_smooth = self.get_smooth_loss(flow_tensor)
+        loss_smooth = self.get_smooth_loss(flow_tensor, img_tensor)
         loss_warp = self.get_warp_loss(img_tensor, flow_tensor, input_tensor, output_tensor, target_image)
 
         lambda_r, lambda_p, lambda_w, lambda_s = loss_weights
@@ -435,8 +448,8 @@ if __name__=='__main__':
     img_tensor = Variable(torch.randn([1, 6, 384, 384])).cuda()
     flow_tensor = Variable(torch.randn([1, 4, 384, 384])).cuda()
 
-    test = model.compute_loss(img_tensor, flow_tensor, input_sample, output_sample,
-                              target_image=gt_sample, loss_weights=loss_weights)
+    test, _ = model.compute_loss(img_tensor, flow_tensor, input_sample, output_sample,
+                              target_image=gt_sample, loss_weights=loss_weights, t=0.5)
     test.backward()
 
 

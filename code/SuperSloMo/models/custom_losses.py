@@ -51,11 +51,27 @@ class SmoothnessLoss(nn.Module):
 
         self.eval()
 
-    def forward(self, x_input):
-        gradient_flow = self.spatial_gradient(x_input) # gradient of the flow
-        abs_gradient = torch.abs(gradient_flow)
-        l1_norm = torch.sum(abs_gradient)
-        return l1_norm
+    def forward(self, flow_input, image):
+
+        gx_flow = self.gradient_x(flow_input)
+        gx_image = self.gradient_x(image)
+
+        w_gx_image = torch.mean(torch.abs(gx_image), dim=1, keepdim=True)
+        w_gx_image = torch.exp(- w_gx_image)
+        gx_flow = gx_flow * w_gx_image
+        smooth_x_loss = torch.mean(torch.abs(gx_flow))
+
+        gy_flow = self.gradient_y(flow_input)
+        gy_image = self.gradient_y(image)
+        w_gy_image = torch.mean(torch.abs(gy_image), dim=1, keepdim=True)
+        w_gy_image = torch.exp(- w_gy_image)
+        gy_flow = gy_flow * w_gy_image
+        smooth_y_loss = torch.mean(torch.abs(gy_flow))
+
+        loss_term = smooth_y_loss + smooth_x_loss
+
+        return loss_term
+
 
     def spatial_gradient(self, image):
         """
@@ -85,22 +101,20 @@ class SmoothnessLoss(nn.Module):
 
 if __name__=='__main__':
 
-    VGGLoss = PerceptualLoss()
-    print(VGGLoss.training)
-
-    tensor_1 = torch.autograd.Variable(torch.randn([2, 3, 100, 100]), requires_grad=True).cuda()
-    tensor_2 = torch.autograd.Variable(torch.randn([2, 3, 100, 100])).cuda()
-    result = VGGLoss(tensor_1, tensor_2)
-    # for param in VGGLoss.parameters():
-    #     print param.requires_grad
-    result.backward()
+    # VGGLoss = PerceptualLoss()
+    # print(VGGLoss.training)
+    #
+    # tensor_1 = torch.autograd.Variable(torch.randn([2, 3, 100, 100]), requires_grad=True).cuda()
+    # tensor_2 = torch.autograd.Variable(torch.randn([2, 3, 100, 100])).cuda()
+    # result = VGGLoss(tensor_1, tensor_2)
+    # # for param in VGGLoss.parameters():
+    # #     print param.requires_grad
+    # result.backward()
 
     loss_smooth = SmoothnessLoss()
-    print(loss_smooth.training)
-    tensor_1 = torch.autograd.Variable(torch.randn([2, 3, 100, 100]), requires_grad=True).cuda()
-    result = loss_smooth(tensor_1)
-    # for param in VGGLoss.parameters():
-    #     print param.requires_grad
-
+    tensor_1 = torch.autograd.Variable(torch.randn([2, 2, 100, 100]), requires_grad=True).cuda()
+    tensor_2 = torch.autograd.Variable(torch.randn([2, 3, 100, 100]), requires_grad=True).cuda()
+    result = loss_smooth(tensor_1, tensor_2)
+    print(result.shape)
     result.backward()
 
