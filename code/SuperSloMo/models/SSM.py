@@ -10,6 +10,7 @@ class FullModel(nn.Module):
 
     def __init__(self, stage1_weights=None, stage2_weights=None):
         super(FullModel, self).__init__()
+
         self.stage1_model = PWCNet.pwc_dc_net(stage1_weights)  # Flow Computation Model
         self.stage2_model = FlowInterpolator.flow_interpolator(stage2_weights)  # Flow Interpolation Model
 
@@ -48,7 +49,9 @@ class FullModel(nn.Module):
 
         return upsampled_flow
 
-    def forward(self, image_0, image_1, dims, scale_factors, t_interp):
+    def forward(self, image_0, image_1, dataset,  t_interp):
+        dims = dataset.dims
+        scale_factors = dataset.scale_factors
         img_tensor, flow_tensor = self.stage1_computations(image_0, image_1, dims, scale_factors)
 
         flowI_input = self.stage2_model.compute_inputs(img_tensor, flow_tensor, t=t_interp)

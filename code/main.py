@@ -1,6 +1,7 @@
 from SuperSloMo.models import SSM
 from SuperSloMo.utils import adobe_240fps, metrics
 import datetime
+import math
 import numpy as np
 
 import torch.optim
@@ -20,7 +21,7 @@ def read_config(configpath='config.ini'):
 
 class SSM_Main:
 
-    def __init__(self, config):
+    def __init__(self, config, log_dir):
         """
         Initializes various objects, and creates an instance of the model.
         Creates a summary writer callback for tensorboard.
@@ -30,16 +31,12 @@ class SSM_Main:
         self.cfg = config
         self.get_hyperparams()
 
+
         expt_name = config.get("EXPERIMENT", "NAME")
         expt_time= datetime.datetime.now().strftime("%d%b_%H%M%S")
         self.expt_name = expt_name + "_" + expt_time
 
-        log_dir = os.path.join(self.cfg.get("PROJECT", "DIR"), "code", "logs", self.expt_name)
-        os.makedirs(os.path.join(log_dir, self.expt_name), exist_ok=True)
-
-        with open(os.path.join(log_dir, self.expt_name +".ini")) as f:
-            config.write(f)
-
+        os.makedirs((os.path.join(log_dir, self.expt_name)))
         self.writer = SummaryWriter(os.path.join(log_dir, self.expt_name))
         self.superslomo = self.load_model()
 
@@ -101,16 +98,21 @@ class SSM_Main:
 
     def np2torch(self, data):
         """
-        Converts numpy data into Torch Variable. B H W C
+        Converts numpy data into Torch Variable. B n_frames H W C
         :param data:
         :return: three tensors - BCHW I_0, I_t, I_1
         """
         oneBatch = Variable(torch.from_numpy(data)).cuda().float()
 
-        oneBatch = oneBatch.permute(0, 3, 1, 2)
-        image_0 = oneBatch[::3, ...].float()
-        image_t = oneBatch[1::3, ...].float()
-        image_1 = oneBatch[2::3, ...].float()
+        oneBatch = oneBatch.permute(0, 1, 4, 2, 3)
+        n_frames = data.shape[1]
+
+        t_index = math.floor(self.t_interp*n_frames) # floor(0.5 * 9) = 4
+        t_index = int(t_index)
+
+        image_0 = oneBatch[:, 0,  ...]
+        image_t = oneBatch[:, t_index, ...]
+        image_1 = oneBatch[:, -1, ...]
 
         return image_0, image_t, image_1
 
@@ -145,7 +147,7 @@ class SSM_Main:
 
         img_0, img_t, img_1 = self.np2torch(numpy_batch)
 
-        results = self.superslomo(img_0, img_t, dataset.dims, dataset.scale_factors, t=self.t_interp)
+        results = self.superslomo(img_0, img_1, dataset, self.t_interp)
 
         flowC_input, flowC_output, flowI_input, flowI_output = results
         target_image = img_t
@@ -203,6 +205,7 @@ class SSM_Main:
                     val_batch = next(val_generator)
 
                 self.forward_pass(val_batch, adobe_val, "VAL")
+                break
 
             if epoch%self.lr_period==0 and epoch>0:
                 self.learning_rate = self.learning_rate*self.lr_decay
@@ -216,9 +219,10 @@ class SSM_Main:
                 }
 
                 fpath = os.path.join(self.cfg.get("PROJECT", "DIR"),
-                                     "weights/SuperSloMo_EPOCH_"+str(epoch).zfill(4)+".pt")
+                                     "weights", self.expt_name+"_EPOCH_"+str(epoch).zfill(4)+".pt")
 
                 torch.save(state, fpath)
+            break
 
         self.writer.close()
 
@@ -273,15 +277,20 @@ if __name__ == '__main__':
     parser.add_argument("-c", "--config", required=True,
                         default="config.ini",
                         help="Path to config.ini file.")
+    parser.add_argument("--logdir", required=True,
+                        help="Path to log directory.")
+
     args = parser.parse_args()
+
     cfg = read_config(args.config)
 
-    model = SSM_Main(cfg)
+    model = SSM_Main(cfg, args.logdir)
 
     model.train()
+
+    """
     adobe_train = adobe_240fps.Reader(cfg, split="TRAIN")
     adobe_val = adobe_240fps.Reader(cfg, split="VAL")
-    adobe_test = adobe_240fps.Reader(cfg, split="TEST")
 
     PSNR, IE, SSIM = model.compute_metrics(adobe_train)
     print("ADOBE TRAIN: PSNR ", PSNR, " IE: ", IE, " SSIM: ", SSIM)
@@ -291,8 +300,7 @@ if __name__ == '__main__':
 
     PSNR, IE, SSIM = model.compute_metrics(adobe_test)
     print("ADOBE TEST: PSNR ", PSNR, " IE: ", IE, " SSIM: ", SSIM)
-
-
+    """
 
 
 ##################################################
