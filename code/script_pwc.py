@@ -33,12 +33,11 @@ def writeFlowFile(filename, uv):
 
 # im1_fn = 'SuperSloMo/data/frame_0010.png';
 # im2_fn = 'SuperSloMo/data/frame_0011.png';
-# # flow_fn = 'SuperSloMo/tmp/pwc_flow_10.flo';
 # flow_fn = 'SuperSloMo/tmp/test_ref_01.flo';
 
-im1_fn = "image0.png"
-im2_fn = "image1.png"
-flow_fn = 'SuperSloMo/tmp/adobe_test.flo';
+im1_fn = "Adobe_image0.png"
+im2_fn = "Adobe_image1.png"
+flow_fn = 'SuperSloMo/tmp/adobe_test.flo'
 
 if len(sys.argv) > 1:
     im1_fn = sys.argv[1]

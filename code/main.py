@@ -161,10 +161,10 @@ class SSM_Main:
 
         else:
 
-            train_losses = self.superslomo.stage2_model.compute_loss(flowC_input, flowC_output,
-                                                                     flowI_input, flowI_output,
-                                                                     target_image, self.loss_weights,
-                                                                     t=self.t_interp)
+            train_losses = self.superslomo.stage2_model.compute_interpolation_losses(flowC_input, flowC_output,
+                                                                                     flowI_input, flowI_output,
+                                                                                     target_image, self.loss_weights,
+                                                                                     t=self.t_interp)
             total_loss, individual_losses = train_losses
             self.write_losses(total_loss, individual_losses, iter, split)
             return total_loss, individual_losses

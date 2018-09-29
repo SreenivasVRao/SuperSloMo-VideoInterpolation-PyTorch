@@ -1,2 +1,2 @@
 from .PWCNet import *
-from .FlowInterpolator import *
+from .UNetFlow import *

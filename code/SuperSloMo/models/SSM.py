@@ -1,5 +1,5 @@
 import PWCNet
-import FlowInterpolator
+import UNetFlow
 
 import torch
 import torch.nn as nn
@@ -8,13 +8,20 @@ from torch.nn import functional as F
 
 class FullModel(nn.Module):
 
-    def __init__(self, stage1_weights=None, stage2_weights=None):
+    def __init__(self, cfg, stage1_weights=None, stage2_weights=None):
         super(FullModel, self).__init__()
+        self.cfg = cfg
+        if self.cfg.get("STAGE1", "MODEL")=="PWC":
+            self.stage1_model = PWCNet.pwc_dc_net(stage1_weights)  # Flow Computation Model
 
-        self.stage1_model = PWCNet.pwc_dc_net(stage1_weights)  # Flow Computation Model
-        self.stage2_model = FlowInterpolator.flow_interpolator(stage2_weights)  # Flow Interpolation Model
+        elif self.cfg.get("STAGE1", "MODEL")=="UNET":
+            self.stage1_model = UNetFlow.get_model(stage1_weights,
+                                                   in_channels=6, out_channels=4)
+        # Flow Computation Model
+        self.stage2_model = UNetFlow.get_model(stage2_weights, in_channels=16,
+                                               out_channels=11)  # Flow Interpolation Model
 
-    def stage1_computations(self, img0, img1, dims, scale_factors):
+    def stage1_computations(self, img0, img1):
         """
         Refer to PWC-Net repo for more details.
         :param img0, img1: torch tensor BGR (0, 255.0)
@@ -31,7 +38,6 @@ class FullModel(nn.Module):
 
         img_tensor = input_pair_01
         flow_tensor = torch.cat([est_flow_01, est_flow_10], dim=1)
-        flow_tensor = self.post_process_flow(flow_tensor, dims, scale_factors)
 
         return img_tensor, flow_tensor
 
@@ -49,10 +55,13 @@ class FullModel(nn.Module):
 
         return upsampled_flow
 
-    def forward(self, image_0, image_1, dataset,  t_interp):
-        dims = dataset.dims
-        scale_factors = dataset.scale_factors
-        img_tensor, flow_tensor = self.stage1_computations(image_0, image_1, dims, scale_factors)
+    def forward(self, image_0, image_1, dataset, t_interp):
+
+        img_tensor, flow_tensor = self.stage1_computations(image_0, image_1)
+        if self.cfg.get("STAGE1","MODEL")=="PWC":
+            flow_tensor = self.post_process_flow(flow_tensor, dataset.dims, dataset.scale_factors)
+        else:
+            pass
 
         flowI_input = self.stage2_model.compute_inputs(img_tensor, flow_tensor, t=t_interp)
         flowI_output = self.stage2_model(flowI_input)

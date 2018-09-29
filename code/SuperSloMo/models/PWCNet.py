@@ -484,13 +484,17 @@ class PWCDCNet_old(nn.Module):
 
 
 
-def pwc_dc_net(path=None):
+def pwc_dc_net(path=None, customweights=False):
 
     model = PWCDCNet()
     if path is not None:
         data = torch.load(path)
-        if 'state_dict' in data.keys():
+        if not customweights and 'state_dict' in data.keys():
+            print("Loading weights from PWCNet checkpoint.")
             model.load_state_dict(data['state_dict'])
+        elif customweights and 'stage1_stage_dict' in data.keys():
+            print("Loading weights from custom checkpoint.")
+            model.load_state_dict(data['stage1_stage_dict'])
         else:
             model.load_state_dict(data)
         print "Loaded weights for Flow Computation: ", path
