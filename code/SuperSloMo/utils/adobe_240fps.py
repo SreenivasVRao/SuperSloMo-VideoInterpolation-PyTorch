@@ -13,7 +13,7 @@ class Reader:
         self.compute_scale_factors()
         self.clips = self.read_clip_list(split)
         self.split = split
-        print("Extracted clip list.")
+        print(split+ ": Extracted clip list.")
 
     def read_clip_list(self, split):
         fpath = self.cfg.get("ADOBE_DATA", split+"PATHS")
@@ -73,14 +73,14 @@ class Reader:
         elif self.split=="VAL":
             clips_list = self.clips[9]
 
-        print("Running generator for extracting clips.")
+        print(self.split+ ": Running generator for extracting clips.")
 
 
         frame_buffer = np.zeros([self.batch_size, 9, self.H, self.W, 3])
         count = 0
 
         while True:
-            clip_idx = random.randint(0, len(clips_list)) # random clip id
+            clip_idx = random.randint(0, len(clips_list)-1) # random clip id
             clip = clips_list[clip_idx]
             start_idx = random.randint(0, len(clip)-9) # random starting point to get subset of 9 frames.
             img_paths = clip[start_idx: start_idx +9]
