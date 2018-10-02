@@ -307,7 +307,10 @@ class UNet(nn.Module):
         dflow_t0 = output_tensor[:, 6:8, ...] # Residual of flow t->0
         img_0 = output_tensor[:, 8:, ...] # Image 0
 
+        v_1t = v_1t[:, None, ...] # making dimensions compatible
+
         v_0t = 1 - v_1t # Visibility Map 0->t
+
 
         return img_1, v_1t, dflow_t1, dflow_t0, v_0t, img_0
 
@@ -330,6 +333,8 @@ class UNet(nn.Module):
 
         pred_img_0t = warp(pred_img_0, -pred_flow_t0) # backward warping to produce img at time t
         pred_img_1t = warp(pred_img_1, -pred_flow_t1) # backward warping to produce img at time t
+
+        print(pred_v_0t.shape, pred_img_0t.shape)
 
         pred_img_0t = pred_v_0t * pred_img_0t # visibility map occlusion reasoning
         pred_img_1t = pred_v_1t * pred_img_1t # visibility map occlusion reasoning

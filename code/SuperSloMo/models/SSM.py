@@ -74,8 +74,8 @@ class FullModel(nn.Module):
             return interpolation_result
 
 
-def full_model(stage1_weights, stage2_weights):
-    model = FullModel(stage1_weights, stage2_weights)
+def full_model(config, stage1_weights, stage2_weights):
+    model = FullModel(config, stage1_weights, stage2_weights)
     return model
 
 

@@ -21,7 +21,7 @@ def read_config(configpath='config.ini'):
 
 class SSM_Main:
 
-    def __init__(self, config, log_dir):
+    def __init__(self, config, expt_name):
         """
         Initializes various objects, and creates an instance of the model.
         Creates a summary writer callback for tensorboard.
@@ -31,13 +31,13 @@ class SSM_Main:
         self.cfg = config
         self.get_hyperparams()
 
+        log_dir = os.path.join(self.cfg.get("PROJECT","DIR"), "logs")
 
-        expt_name = config.get("EXPERIMENT", "NAME")
         expt_time= datetime.datetime.now().strftime("%d%b_%H%M%S")
         self.expt_name = expt_name + "_" + expt_time
 
-        os.makedirs((os.path.join(log_dir, self.expt_name)))
-        self.writer = SummaryWriter(os.path.join(log_dir, self.expt_name))
+        os.makedirs(os.path.join(log_dir, self.expt_name))
+        self.writer = SummaryWriter(os.path.join(log_dir, expt_name, self.expt_name))
         self.superslomo = self.load_model()
 
     def load_model(self):
@@ -58,7 +58,7 @@ class SSM_Main:
             stage1_weights = self.cfg.get("STAGE1", "WEIGHTS")
             stage1_weights = os.path.join(top_dir, stage1_weights)
 
-        model = SSM.full_model(stage1_weights, stage2_weights).cuda()
+        model = SSM.full_model(self.cfg, stage1_weights, stage2_weights).cuda()
         if self.cfg.getboolean("STAGE1", "FREEZE"):
             print("Freezing stage1 model.")
             model.stage1_model.eval()
@@ -135,7 +135,7 @@ class SSM_Main:
         self.writer.add_scalars('Smoothness Loss', {split: loss_smooth.data[0]}, iteration)
         self.writer.add_scalars('Warping Loss', {split: loss_warp.data[0]}, iteration)
 
-    def forward_pass(self, numpy_batch, dataset, split, get_interpolation=False):
+    def forward_pass(self, numpy_batch, dataset, split, iter, get_interpolation=False):
         """
         :param numpy_batch: B H W C 0-255, np.uint8
         :param dataset: dataset object with corresponding split.
@@ -191,7 +191,7 @@ class SSM_Main:
             for train_batch in adobe_train.get_clips():
                 iter +=1
 
-                train_loss, _ = self.forward_pass(train_batch, adobe_train, "TRAIN")
+                train_loss, _ = self.forward_pass(train_batch, adobe_train, "TRAIN", iter)
 
                 optimizer.zero_grad()
                 train_loss.backward()
@@ -204,8 +204,8 @@ class SSM_Main:
                     val_generator = adobe_val.get_clips()
                     val_batch = next(val_generator)
 
-                self.forward_pass(val_batch, adobe_val, "VAL")
-                break
+                self.forward_pass(val_batch, adobe_val, "VAL", iter)
+
 
             if epoch%self.lr_period==0 and epoch>0:
                 self.learning_rate = self.learning_rate*self.lr_decay
@@ -222,7 +222,7 @@ class SSM_Main:
                                      "weights", self.expt_name+"_EPOCH_"+str(epoch).zfill(4)+".pt")
 
                 torch.save(state, fpath)
-            break
+
 
         self.writer.close()
 
@@ -240,8 +240,7 @@ class SSM_Main:
 
         for a_batch in dataset.get_clips():
             nframes += a_batch.shape[0]/3
-            est_image_t, gt_image_t = self.forward_pass(a_batch, dataset,
-                                                        split="TRAIN", get_interpolation=True)
+            est_image_t, gt_image_t = self.forward_pass(a_batch, dataset,"TRAIN", iter,  get_interpolation=True)
             est_image_t = est_image_t * 255.0
 
             est_image_t = est_image_t.permute(0, 2, 3, 1) # BCHW -> BHWC
@@ -277,14 +276,14 @@ if __name__ == '__main__':
     parser.add_argument("-c", "--config", required=True,
                         default="config.ini",
                         help="Path to config.ini file.")
-    parser.add_argument("--logdir", required=True,
-                        help="Path to log directory.")
+    parser.add_argument("--expt", required=True,
+                        help="Experiment Name.")
 
     args = parser.parse_args()
 
     cfg = read_config(args.config)
 
-    model = SSM_Main(cfg, args.logdir)
+    model = SSM_Main(cfg, args.expt)
 
     model.train()
 
