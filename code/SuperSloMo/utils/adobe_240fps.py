@@ -7,6 +7,7 @@ from math import ceil
 
 log = logging.getLogger(__name__)
 
+
 class Reader:
 
     def __init__(self, cfg, split="TRAIN"):
@@ -42,8 +43,6 @@ class Reader:
 
         return clips
 
-
-
     def compute_scale_factors(self):
         self.H = self.cfg.getint("ADOBE_DATA", "H")
         self.W = self.cfg.getint("ADOBE_DATA", "W")
@@ -58,7 +57,6 @@ class Reader:
         self.s_y = float(self.H) / H_
 
         self.scale_factors= (self.s_y, self.s_x)
-
 
     def get_clips(self):
         """
@@ -77,11 +75,11 @@ class Reader:
 
         log.info(self.split+ ": Running generator for extracting clips.")
 
-
         frame_buffer = np.zeros([self.batch_size, 9, self.H, self.W, 3])
+
         count = 0
 
-        while True:
+        for _ in range(len(clips_list)):
             clip_idx = random.randint(0, len(clips_list)-1) # random clip id
             clip = clips_list[clip_idx]
             start_idx = random.randint(0, len(clip)-9) # random starting point to get subset of 9 frames.
@@ -99,7 +97,6 @@ class Reader:
                 yield frame_buffer
                 frame_buffer = np.zeros([self.batch_size, 9, self.H, self.W, 3])
                 count = 0
-
 
 
 if __name__ == '__main__':

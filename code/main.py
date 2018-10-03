@@ -30,11 +30,12 @@ class SSM_Main:
 
         self.cfg = config
         self.get_hyperparams()
-
+        self.expt_name = expt_name
         log_dir = os.path.join(self.cfg.get("PROJECT","DIR"), "logs")
 
-        os.makedirs(os.path.join(log_dir, expt_name, "plots"))
-        self.writer = SummaryWriter(os.path.join(log_dir, expt_name, "plots"))
+        os.makedirs(os.path.join(log_dir, self.expt_name, "plots"))
+
+        self.writer = SummaryWriter(os.path.join(log_dir, self.expt_name, "plots"))
         self.superslomo = self.load_model()
 
     def load_model(self):
@@ -126,11 +127,11 @@ class SSM_Main:
 
         loss_reconstr, loss_perceptual, loss_smooth, loss_warp = individual_losses
 
-        self.writer.add_scalars('Total Loss', {split: total_loss.data[0]}, iteration)
-        self.writer.add_scalars('Reconstruction Loss', {split: loss_reconstr.data[0]}, iteration)
-        self.writer.add_scalars('Perceptual Loss', {split: loss_perceptual.data[0]}, iteration)
-        self.writer.add_scalars('Smoothness Loss', {split: loss_smooth.data[0]}, iteration)
-        self.writer.add_scalars('Warping Loss', {split: loss_warp.data[0]}, iteration)
+        self.writer.add_scalars('Total_Loss', {split: total_loss.data[0]}, iteration)
+        self.writer.add_scalars('Reconstruction_Loss', {split: loss_reconstr.data[0]}, iteration)
+        self.writer.add_scalars('Perceptual_Loss', {split: loss_perceptual.data[0]}, iteration)
+        self.writer.add_scalars('Smoothness_Loss', {split: loss_smooth.data[0]}, iteration)
+        self.writer.add_scalars('Warping_Loss', {split: loss_warp.data[0]}, iteration)
 
     def forward_pass(self, numpy_batch, dataset, split, iter, get_interpolation=False):
         """
@@ -214,8 +215,8 @@ class SSM_Main:
                     'optimizer': optimizer.state_dict(),
                 }
 
-                fpath = os.path.join(self.cfg.get("PROJECT", "DIR"),
-                                     "weights", self.expt_name+"_EPOCH_"+str(epoch).zfill(4)+".pt")
+                fpath = os.path.join(self.cfg.get("PROJECT", "DIR"), "logs",
+                                     self.expt_name, self.expt_name+"_EPOCH_"+str(epoch).zfill(4)+".pt")
 
                 torch.save(state, fpath)
 
