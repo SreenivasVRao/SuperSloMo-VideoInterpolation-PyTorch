@@ -24,7 +24,7 @@ class Reader:
             data = f.readlines()
             data = [d.strip() for d in data]
 
-        clips = {}
+        clips = []
 
         data = [d.replace("/home/", "/mnt/nfs/work1/elm/") for d in data]
         data = [d.replace("/workspace", "") for d in data]
@@ -33,11 +33,7 @@ class Reader:
             if len(d)<=2:
                 nframes = int(d)
                 img_paths = data[idx + 1 : idx + 1 + nframes]
-                if nframes in clips.keys():
-                    clips[nframes].append(img_paths)
-
-                else:
-                    clips[nframes]=[img_paths]
+                clips.append(img_paths)
             else:
                 continue
 
@@ -68,22 +64,28 @@ class Reader:
         :param n_frames: number of frames to extract for each clip
         :return:
         """
-        if self.split=="TRAIN":
-            clips_list = self.clips[12]
-        elif self.split=="VAL":
-            clips_list = self.clips[9]
 
         log.info(self.split+ ": Running generator for extracting clips.")
-
+        random.shuffle(self.clips)
         frame_buffer = np.zeros([self.batch_size, 9, self.H, self.W, 3])
 
         count = 0
 
-        for _ in range(len(clips_list)):
-            clip_idx = random.randint(0, len(clips_list)-1) # random clip id
-            clip = clips_list[clip_idx]
-            start_idx = random.randint(0, len(clip)-9) # random starting point to get subset of 9 frames.
-            img_paths = clip[start_idx: start_idx +9]
+        for idx, clip in enumerate(self.clips):
+            if len(clip) <9:
+                continue
+            elif len(clip) < 12:
+                start_idx = random.randint(0, len(clip) - 9)
+                # random starting point to get 9 frames.
+                img_paths = clip[start_idx: start_idx + 9]
+            elif len(clip) >= 12:
+                subset = random.randint(0, len(clip)-12)
+                # random starting point to get subset of 12 frames.
+                clip_12 = clip[subset:subset+12]
+                start_idx = random.randint(0, 3) # 12 - 9
+                # random starting point to get subset of 9 frames.
+                img_paths = clip_12[start_idx: start_idx +9]
+
             images = [cv2.imread(fpath) for fpath in img_paths]
             images = [cv2.resize(image, (640, 360)) for image in images]
             images = np.array(images)
