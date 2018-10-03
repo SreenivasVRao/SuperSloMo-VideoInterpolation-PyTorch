@@ -3,6 +3,7 @@ import torch.nn.functional as F
 import torchvision
 import torch
 import logging
+import numpy  as np
 
 log = logging.getLogger(__name__)
 
@@ -11,36 +12,61 @@ class PerceptualLoss(nn.Module):
     def __init__(self, use_cuda=True):
         super(PerceptualLoss, self).__init__()
         self.vgg16 = torchvision.models.vgg16(pretrained=True)
+
+        self.l2_loss = nn.MSELoss()
+
+        vgg16_mean = np.asarray([0.485, 0.456, 0.406])[None, :, None, None]
+        vgg16_std = np.asarray([0.229, 0.224, 0.225])[None, :, None, None]
+        self.vgg16_std = torch.autograd.Variable(torch.from_numpy(vgg16_std), requires_grad=False)
+        self.vgg16_mean = torch.autograd.Variable(torch.from_numpy(vgg16_mean), requires_grad=False)
+
+        self.vgg16_std = self.vgg16_std.float().cuda()
+        self.vgg16_mean = self.vgg16_mean.float().cuda()
+
+        self.vgg16.eval()
+        self.eval()
+
         for param in self.vgg16.parameters():
             param.requires_grad = False
         for param in self.parameters():
             param.requires_grad = False
 
-        self.vgg16.eval()
-
         self.modulelist = list(self.vgg16.features.modules())
-
         self.modulelist = self.modulelist[1:23] # until conv4_3
-
-        self.eval()
 
         if use_cuda:
             self.vgg16.cuda()
             self.cuda()
 
+    def rescale(self, tensor):
+        """
+        :param tensor: B C H W tensor
+        :return: tensor after rescaling to [0, 1]
+        """
+        b, c, h, w = tensor.shape
+        max_val, _ = tensor.view(b, c, -1).max(dim=2)
+        min_val, _ = tensor.view(b, c, -1).min(dim=2)
+
+        max_val = max_val[..., None, None]
+        min_val = min_val[..., None, None]
+
+        tensor_rescaled = (tensor - min_val)/(max_val-min_val)
+        tensor_normed = (tensor_rescaled - self.vgg16_mean) / self.vgg16_std
+
+        return tensor_normed
+
+
     def forward(self, x_input, x_target):
+        x_input = self.rescale(x_input)
+        x_target = self.rescale(x_target)
 
         for aLayer in self.modulelist: # until conv4_3
             x_input = aLayer(x_input)
             x_target = aLayer(x_target)
 
-        difference = x_input - x_target
+        perceptual_loss = self.l2_loss(x_input, x_target)
 
-        diff_sq = difference**2
-
-        l2_norm_mean = torch.mean(diff_sq)
-
-        return l2_norm_mean
+        return perceptual_loss
 
 
 class SmoothnessLoss(nn.Module):
@@ -102,15 +128,15 @@ class SmoothnessLoss(nn.Module):
 
 if __name__=='__main__':
 
-    # VGGLoss = PerceptualLoss()
-    # print(VGGLoss.training)
-    #
-    # tensor_1 = torch.autograd.Variable(torch.randn([2, 3, 100, 100]), requires_grad=True).cuda()
-    # tensor_2 = torch.autograd.Variable(torch.randn([2, 3, 100, 100])).cuda()
-    # result = VGGLoss(tensor_1, tensor_2)
-    # # for param in VGGLoss.parameters():
-    # #     print param.requires_grad
-    # result.backward()
+    VGGLoss = PerceptualLoss()
+    print(VGGLoss.training)
+
+    tensor_1 = torch.autograd.Variable(torch.randn([2, 3, 100, 100]), requires_grad=True).cuda()
+    tensor_2 = torch.autograd.Variable(torch.randn([2, 3, 100, 100])).cuda()
+    result = VGGLoss(tensor_1, tensor_2)
+    # for param in VGGLoss.parameters():
+    #     print param.requires_grad
+    result.backward()
 
     loss_smooth = SmoothnessLoss()
     tensor_1 = torch.autograd.Variable(torch.randn([2, 2, 100, 100]), requires_grad=True).cuda()
