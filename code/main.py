@@ -128,12 +128,12 @@ class SSM_Main:
         :return:
         """
 
-        loss_reconstr, loss_perceptual, loss_smooth, loss_warp = individual_losses
+        loss_reconstr, loss_perceptual, loss_warp = individual_losses
 
         self.writer.add_scalars('Total_Loss', {split: total_loss.data[0]}, iteration)
         self.writer.add_scalars('Reconstruction_Loss', {split: loss_reconstr.data[0]}, iteration)
         self.writer.add_scalars('Perceptual_Loss', {split: loss_perceptual.data[0]}, iteration)
-        self.writer.add_scalars('Smoothness_Loss', {split: loss_smooth.data[0]}, iteration)
+        # self.writer.add_scalars('Smoothness_Loss', {split: loss_smooth.data[0]}, iteration)
         self.writer.add_scalars('Warping_Loss', {split: loss_warp.data[0]}, iteration)
 
     def forward_pass(self, numpy_batch, dataset, split, iter, get_interpolation=False):

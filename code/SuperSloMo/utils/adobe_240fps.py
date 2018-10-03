@@ -100,6 +100,10 @@ class Reader:
                 frame_buffer = np.zeros([self.batch_size, 9, self.H, self.W, 3])
                 count = 0
 
+        if count>0: # last remaining batch
+            yield frame_buffer[:count, ...]
+
+
 
 if __name__ == '__main__':
     import ConfigParser

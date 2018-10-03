@@ -7,7 +7,6 @@ import logging
 
 log = logging.getLogger(__name__)
 
-
 class UNet(nn.Module):
 
     def __init__(self, in_channels, out_channels, batch_norm=False, verbose=False):
@@ -167,7 +166,7 @@ class UNet(nn.Module):
 
     def forward(self, input_tensor):
         """
-        :param input_tensor: input: N,18,  H, W,
+        :param input_tensor: input: N,18, H, W,
         batch_size = N
 
         :return: output_tensor: N, 18, H, W, C
@@ -259,6 +258,8 @@ class UNet(nn.Module):
         # input_11 = torch.cat([upsample11_out, conv1b_out], dim=1)
         conv11a_out = self.conv11a(input_11)
         conv11b_out = self.conv11b(conv11a_out)
+        if self.verbose:
+            log.info("Output Block 11: "+str(conv11b_out.shape))
 
         return conv11b_out
 
@@ -313,7 +314,6 @@ class UNet(nn.Module):
         v_1t = v_1t[:, None, ...] # making dimensions compatible
 
         v_0t = 1 - v_1t # Visibility Map 0->t
-
 
         return img_1, v_1t, dflow_t1, dflow_t0, v_0t, img_0
 
@@ -388,22 +388,6 @@ class UNet(nn.Module):
         loss_perceptual = self.perceptual_loss_fn(img, target_img)
         return loss_perceptual
 
-    def get_smooth_loss(self, flow_tensor, image_tensor):
-        assert image_tensor.shape[1]==6, "Expected B 6 H W tensor."
-        assert flow_tensor.shape[1]==4, "Expected B 4 H W tensor."
-        img_0 = image_tensor[:, :3, ...] # first half of B 6 H W tensor
-        img_1 = image_tensor[:, 3:, ...] # second half
-
-        flow_01 = flow_tensor[:, :2, ...] # flow 0 -> 1
-        flow_10 = flow_tensor[:, 2:, ...] # flow 1 -> 0
-
-        loss_smooth_01 = self.smooth_loss_1(flow_01, img_0)
-        loss_smooth_10 = self.smooth_loss_2(flow_10, img_1)
-
-        loss_smooth = loss_smooth_01 + loss_smooth_10
-
-        return loss_smooth
-
     def compute_interpolation_losses(self, img_tensor, flow_tensor, input_tensor,
                                      output_tensor, target_image, loss_weights, t):
         """
@@ -421,29 +405,17 @@ class UNet(nn.Module):
         interpolated_image = self.compute_output_image(input_tensor, output_tensor, t)
         loss_reconstr = self.get_reconstruction_loss(interpolated_image, target_image)
         loss_perceptual = self.get_perceptual_loss(interpolated_image, target_image)
-        loss_smooth = self.get_smooth_loss(flow_tensor, img_tensor)
         loss_warp = self.get_warp_loss(img_tensor, flow_tensor, input_tensor, output_tensor, target_image)
 
         lambda_r, lambda_p, lambda_w, lambda_s = loss_weights
 
-        total_loss = lambda_r * loss_reconstr + lambda_s * loss_smooth + \
+        total_loss = lambda_r * loss_reconstr + \
                      lambda_w * loss_warp + lambda_p * loss_perceptual
+        return total_loss, (loss_reconstr, loss_perceptual, loss_warp)
 
-        return total_loss, (loss_reconstr, loss_perceptual, loss_smooth, loss_warp)
 
-    def compute_flownet_losses(self, flow_tensor, target_flow):
-        est_flow_01 = flow_tensor[:, 0:2, ...]
-        est_flow_10 = flow_tensor[:, 2:,  ...]
-
-        gt_flow_01 = target_flow[:, 0:2, ...]
-        gt_flow_10 = target_flow[:, 2:,  ...]
-
-        loss = self.flownet_loss_1(est_flow_01, gt_flow_01) + self.flownet_loss_2(est_flow_10, gt_flow_10)
-        raise NotImplementedError
-        # return loss
-
-def get_model(path, in_channels, out_channels):
-    model = UNet(in_channels, out_channels)
+def get_model(path, in_channels, out_channels, verbose=False):
+    model = UNet(in_channels, out_channels, verbose=verbose)
     if path is not None:
         data = torch.load(path)
         if 'stage2_state_dict' in data.keys():
@@ -458,23 +430,19 @@ def get_model(path, in_channels, out_channels):
 
 
 if __name__=='__main__':
+    logging.basicConfig(filename="test.log", level=logging.INFO)
 
-    model = get_model(path=None, in_channels=16, out_channels=11)
+    model = get_model(path=None, in_channels=16, out_channels=11, verbose=True)
     model = model.cuda()
-    import random
-    h = random.randint(1, 10)*64
-    w = random.randint(1, 10)*64
 
-    input_sample = Variable(torch.randn([1, 16, h, w])).cuda()
+    input_sample = Variable(torch.randn([1, 16, 320, 640])).cuda()
     output_sample = model(input_sample)
 
-    assert output_sample.shape==(1, 11, h, w), "Nope."
-
-    gt_sample = Variable(torch.randn([1, 3, 384, 384])).cuda()
+    gt_sample = Variable(torch.randn([1, 3, 320, 640])).cuda()
 
     loss_weights = (0.5, 0.6, 1, 1)
-    img_tensor = Variable(torch.randn([1, 6, 384, 384])).cuda()
-    flow_tensor = Variable(torch.randn([1, 4, 384, 384])).cuda()
+    img_tensor = Variable(torch.randn([1, 6, 320, 640])).cuda()
+    flow_tensor = Variable(torch.randn([1, 4, 320, 640])).cuda()
 
     test, _ = model.compute_interpolation_losses(img_tensor, flow_tensor, input_sample, output_sample,
                                                  target_image=gt_sample, loss_weights=loss_weights, t=0.5)

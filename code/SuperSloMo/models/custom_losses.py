@@ -44,6 +44,7 @@ class PerceptualLoss(nn.Module):
         :return: tensor after rescaling to [0, 1]
         """
         b, c, h, w = tensor.shape
+        tensor = tensor.contiguous()
         max_val, _ = tensor.view(b, c, -1).max(dim=2)
         min_val, _ = tensor.view(b, c, -1).min(dim=2)
 
