@@ -21,7 +21,7 @@ def read_config(configpath='config.ini'):
 
 class SSM_Main:
 
-    def __init__(self, config, expt_name):
+    def __init__(self, config, expt_name, message=None):
         """
         Initializes various objects, and creates an instance of the model.
         Creates a summary writer callback for tensorboard.
@@ -31,11 +31,14 @@ class SSM_Main:
         self.cfg = config
         self.get_hyperparams()
         self.expt_name = expt_name
+        self.msg = message
         log_dir = os.path.join(self.cfg.get("PROJECT","DIR"), "logs")
 
         os.makedirs(os.path.join(log_dir, self.expt_name, "plots"))
 
         self.writer = SummaryWriter(os.path.join(log_dir, self.expt_name, "plots"))
+        if message:
+            self.writer.add_text("ExptInfo", message)
         self.superslomo = self.load_model()
 
     def load_model(self):
@@ -278,13 +281,15 @@ if __name__ == '__main__':
 
     parser.add_argument("--log", required=True, help="Path to logfile.")
 
+    parser.add_argument("--msg", help="(Optional) Details of experiment stored with TensorBoard.")
+
     args = parser.parse_args()
 
     logging.basicConfig(filename=args.log, level=logging.INFO)
 
     cfg = read_config(args.config)
 
-    model = SSM_Main(cfg, args.expt)
+    model = SSM_Main(cfg, args.expt, args.msg)
 
     model.train()
 
