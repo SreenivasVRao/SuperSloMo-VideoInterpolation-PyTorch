@@ -36,7 +36,7 @@ class SSM_Main:
         expt_time= datetime.datetime.now().strftime("%d%b_%H%M%S")
         self.expt_name = expt_name + "_" + expt_time
 
-        os.makedirs(os.path.join(log_dir, self.expt_name))
+        os.makedirs(os.path.join(log_dir, expt_name, self.expt_name))
         self.writer = SummaryWriter(os.path.join(log_dir, expt_name, self.expt_name))
         self.superslomo = self.load_model()
 

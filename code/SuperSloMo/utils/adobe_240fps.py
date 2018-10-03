@@ -27,7 +27,7 @@ class Reader:
         data = [d.replace("/workspace", "") for d in data]
 
         for idx, d in enumerate(data):
-            if len(d)==2:
+            if len(d)<=2:
                 nframes = int(d)
                 img_paths = data[idx + 1 : idx + 1 + nframes]
                 if nframes in clips.keys():
