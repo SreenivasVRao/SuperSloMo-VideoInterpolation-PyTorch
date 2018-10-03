@@ -38,9 +38,9 @@ class PerceptualLoss(nn.Module):
 
         diff_sq = difference**2
 
-        l2_norm = torch.sum(diff_sq)
+        l2_norm_mean = torch.mean(diff_sq)
 
-        return l2_norm
+        return l2_norm_mean
 
 
 class SmoothnessLoss(nn.Module):
@@ -73,7 +73,6 @@ class SmoothnessLoss(nn.Module):
         loss_term = smooth_y_loss + smooth_x_loss
 
         return loss_term
-
 
     def spatial_gradient(self, image):
         """
