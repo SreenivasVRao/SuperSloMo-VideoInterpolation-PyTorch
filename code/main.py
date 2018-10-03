@@ -1,6 +1,5 @@
 from SuperSloMo.models import SSM
 from SuperSloMo.utils import adobe_240fps, metrics
-import datetime
 import math
 import numpy as np
 
@@ -9,8 +8,9 @@ import torch
 from torch.autograd import Variable
 
 from tensorboardX import SummaryWriter
-import os
-import ConfigParser
+import os, logging, ConfigParser
+
+log = logging.getLogger(__name__)
 
 
 def read_config(configpath='config.ini'):
@@ -33,11 +33,8 @@ class SSM_Main:
 
         log_dir = os.path.join(self.cfg.get("PROJECT","DIR"), "logs")
 
-        expt_time= datetime.datetime.now().strftime("%d%b_%H%M%S")
-        self.expt_name = expt_name + "_" + expt_time
-
-        os.makedirs(os.path.join(log_dir, expt_name, self.expt_name))
-        self.writer = SummaryWriter(os.path.join(log_dir, expt_name, self.expt_name))
+        os.makedirs(os.path.join(log_dir, expt_name, "plots"))
+        self.writer = SummaryWriter(os.path.join(log_dir, expt_name, "plots"))
         self.superslomo = self.load_model()
 
     def load_model(self):
@@ -60,20 +57,20 @@ class SSM_Main:
 
         model = SSM.full_model(self.cfg, stage1_weights, stage2_weights).cuda()
         if self.cfg.getboolean("STAGE1", "FREEZE"):
-            print("Freezing stage1 model.")
+            log.info("Freezing stage1 model.")
             model.stage1_model.eval()
             for param in model.stage1_model.parameters():
                 param.requires_grad = False
         else:
-            print("Training stage1 model.")
+            log.info("Training stage1 model.")
 
         if self.cfg.getboolean("STAGE2", "FREEZE"):
-            print("Freezing stage2 model.")
+            log.info("Freezing stage2 model.")
             model.stage2_model.eval()
             for param in model.stage2_model.parameters():
                 param.requires_grad = False
         else:
-            print("Training stage2 model.")
+            log.info("Training stage2 model.")
 
         return model
 
@@ -186,7 +183,7 @@ class SSM_Main:
             adobe_val = adobe_240fps.Reader(self.cfg, split="VAL")
             val_generator = adobe_val.get_clips()
 
-            print ("Epoch: ", epoch, " Iteration: ", iter)
+            log.info("Epoch: "+str(epoch)+" Iteration: "+str(iter))
 
             for train_batch in adobe_train.get_clips():
                 iter +=1
@@ -205,7 +202,6 @@ class SSM_Main:
                     val_batch = next(val_generator)
 
                 self.forward_pass(val_batch, adobe_val, "VAL", iter)
-
 
             if epoch%self.lr_period==0 and epoch>0:
                 self.learning_rate = self.learning_rate*self.lr_decay
@@ -279,7 +275,11 @@ if __name__ == '__main__':
     parser.add_argument("--expt", required=True,
                         help="Experiment Name.")
 
+    parser.add_argument("--log", required=True, help="Path to logfile.")
+
     args = parser.parse_args()
+
+    logging.basicConfig(filename=args.log, level=logging.INFO)
 
     cfg = read_config(args.config)
 
@@ -292,13 +292,13 @@ if __name__ == '__main__':
     adobe_val = adobe_240fps.Reader(cfg, split="VAL")
 
     PSNR, IE, SSIM = model.compute_metrics(adobe_train)
-    print("ADOBE TRAIN: PSNR ", PSNR, " IE: ", IE, " SSIM: ", SSIM)
+    logging.info("ADOBE TRAIN: PSNR ", PSNR, " IE: ", IE, " SSIM: ", SSIM)
 
     PSNR, IE, SSIM = model.compute_metrics(adobe_val)
-    print("ADOBE VAL: PSNR ", PSNR, " IE: ", IE, " SSIM: ", SSIM)
+    logging.info("ADOBE VAL: PSNR ", PSNR, " IE: ", IE, " SSIM: ", SSIM)
 
     PSNR, IE, SSIM = model.compute_metrics(adobe_test)
-    print("ADOBE TEST: PSNR ", PSNR, " IE: ", IE, " SSIM: ", SSIM)
+    logging.info("ADOBE TEST: PSNR ", PSNR, " IE: ", IE, " SSIM: ", SSIM)
     """
 
 

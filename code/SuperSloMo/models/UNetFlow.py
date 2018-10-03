@@ -3,6 +3,9 @@ from custom_losses import PerceptualLoss, SmoothnessLoss
 import torch.nn as nn
 import torch.nn.functional as F
 import torch
+import logging
+
+log = logging.getLogger(__name__)
 
 
 class UNet(nn.Module):
@@ -172,48 +175,48 @@ class UNet(nn.Module):
 
         """
         if self.verbose:
-            print "Input: ", input_tensor.shape
+            log.info("Input: " + str(input_tensor.shape))
 
         conv1a_out = self.conv1a(input_tensor)
         conv1b_out = self.conv1b(conv1a_out)
 
         if self.verbose:
-            print "Output Block 1: ", conv1b_out.shape
+            log.info("Output Block 1: "+str(conv1b_out.shape))
 
         pool2_out  = self.pool2(conv1b_out)
         conv2a_out = self.conv2a(pool2_out)
         conv2b_out = self.conv2b(conv2a_out)
 
         if self.verbose:
-            print "Output Block 2: ", conv2b_out.shape
+            log.info("Output Block 2: "+str(conv2b_out.shape))
 
         pool3_out  = self.pool3(conv2b_out)
         conv3a_out = self.conv3a(pool3_out)
         conv3b_out = self.conv3b(conv3a_out)
 
         if self.verbose:
-            print "Output Block 3: ", conv3b_out.shape
+            log.info("Output Block 3: "+str(conv3b_out.shape))
 
         pool4_out  = self.pool4(conv3b_out)
         conv4a_out = self.conv4a(pool4_out)
         conv4b_out = self.conv4b(conv4a_out)
 
         if self.verbose:
-            print "Output Block 4: ", conv4b_out.shape
+            log.info("Output Block 4: "+str(conv4b_out.shape))
 
         pool5_out  = self.pool5(conv4b_out)
         conv5a_out = self.conv5a(pool5_out)
         conv5b_out = self.conv5b(conv5a_out)
 
         if self.verbose:
-            print "Output Block 5: ", conv5b_out.shape
+            log.info("Output Block 5: "+str(conv5b_out.shape))
 
         pool6_out  = self.pool6(conv5b_out)
         conv6a_out = self.conv6a(pool6_out)
         conv6b_out = self.conv6b(conv6a_out)
 
         if self.verbose:
-            print "Output Block 6: ", conv6b_out.shape
+            log.info("Output Block 6: "+str(conv6b_out.shape))
 
         upsample7_out = self.upsample7(conv6b_out)
         input_7 = self.concat_tensors(upsample7_out, conv5b_out)
@@ -222,7 +225,7 @@ class UNet(nn.Module):
         conv7b_out = self.conv7b(conv7a_out)
 
         if self.verbose:
-            print "Output Block 7: ", conv7b_out.shape
+            log.info("Output Block 7: "+str(conv7b_out.shape))
 
         upsample8_out = self.upsample8(conv7b_out)
         input_8 = self.concat_tensors(upsample8_out, conv4b_out)
@@ -231,7 +234,7 @@ class UNet(nn.Module):
         conv8b_out = self.conv8b(conv8a_out)
 
         if self.verbose:
-            print "Output Block 8: ", conv8b_out.shape
+            log.info("Output Block 8: "+str(conv8b_out.shape))
 
         upsample9_out = self.upsample8(conv8b_out)
         input_9 = self.concat_tensors(upsample9_out, conv3b_out)
@@ -240,7 +243,7 @@ class UNet(nn.Module):
         conv9b_out = self.conv9b(conv9a_out)
 
         if self.verbose:
-            print "Output Block 9: ", conv9b_out.shape
+            log.info("Output Block 9: "+str(conv9b_out.shape))
 
         upsample10_out = self.upsample10(conv9b_out)
         input_10 = self.concat_tensors(upsample10_out, conv2b_out)
@@ -249,7 +252,7 @@ class UNet(nn.Module):
         conv10b_out = self.conv10b(conv10a_out)
 
         if self.verbose:
-            print "Output Block 10: ", conv10b_out.shape
+            log.info("Output Block 10: "+str(conv10b_out.shape))
 
         upsample11_out = self.upsample11(conv10b_out)
         input_11 = self.concat_tensors(upsample11_out, conv1b_out)
@@ -289,7 +292,7 @@ class UNet(nn.Module):
                                   est_flow_t0, warped_img_0t, img_0], dim=1)
 
         if self.verbose:
-            print "Generated Input tensor of shape:", input_tensor.shape
+            log.info("Generated Input tensor of shape:"+str(input_tensor.shape))
 
         return input_tensor
 
@@ -333,8 +336,6 @@ class UNet(nn.Module):
 
         pred_img_0t = warp(pred_img_0, -pred_flow_t0) # backward warping to produce img at time t
         pred_img_1t = warp(pred_img_1, -pred_flow_t1) # backward warping to produce img at time t
-
-        print(pred_v_0t.shape, pred_img_0t.shape)
 
         pred_img_0t = pred_v_0t * pred_img_0t # visibility map occlusion reasoning
         pred_img_1t = pred_v_1t * pred_img_1t # visibility map occlusion reasoning
@@ -449,9 +450,9 @@ def get_model(path, in_channels, out_channels):
             model.load_state_dict(data['stage2_state_dict'])
         else:
             model.load_state_dict(data)
-        print "Loaded weights for Flow Interpolator: ", path
+        log.info("Loaded weights for Flow Interpolator: "+str(path))
     else:
-        print "Not loading weights for Flow Interpolator."
+        log.info("Not loading weights for Flow Interpolator.")
     return model
 
 

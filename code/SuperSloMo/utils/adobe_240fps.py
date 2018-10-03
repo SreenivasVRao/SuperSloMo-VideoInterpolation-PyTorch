@@ -1,9 +1,11 @@
-import glob
+import glob, logging
 import cv2
 import numpy as np
 import random, os
 from math import ceil
 
+
+log = logging.getLogger(__name__)
 
 class Reader:
 
@@ -13,7 +15,7 @@ class Reader:
         self.compute_scale_factors()
         self.clips = self.read_clip_list(split)
         self.split = split
-        print(split+ ": Extracted clip list.")
+        log.info(split+ ": Extracted clip list.")
 
     def read_clip_list(self, split):
         fpath = self.cfg.get("ADOBE_DATA", split+"PATHS")
@@ -73,7 +75,7 @@ class Reader:
         elif self.split=="VAL":
             clips_list = self.clips[9]
 
-        print(self.split+ ": Running generator for extracting clips.")
+        log.info(self.split+ ": Running generator for extracting clips.")
 
 
         frame_buffer = np.zeros([self.batch_size, 9, self.H, self.W, 3])
@@ -107,5 +109,5 @@ if __name__ == '__main__':
     adobe_dataset = Reader(config, split="TRAIN")
     for aClip in adobe_dataset.get_clips():
         np.save("Clips.npy", aClip)
-        print(aClip.shape)
+        log.info(""+str(aClip.shape))
         exit(0)

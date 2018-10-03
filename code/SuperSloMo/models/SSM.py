@@ -4,6 +4,9 @@ import UNetFlow
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
+import logging
+
+log = logging.getLogger(__name__)
 
 
 class FullModel(nn.Module):
@@ -88,9 +91,8 @@ if __name__ == '__main__':
     config.read("../../config.ini")
 
     stage1_weights = os.path.join(config.get("PROJECT", "DIR"), config.get("STAGE1", "WEIGHTS"))
-    full_model(stage1_weights, None)
+    full_model(config, stage1_weights, None)
     exit(0)
-
 
     adobe_dataset = adobe_240fps.Reader(config, split="TRAIN")
 
@@ -107,6 +109,6 @@ if __name__ == '__main__':
     superslomo = FullModel(stage1_weights)
     superslomo.cuda()
     superslomo.train(False)
-    interpolated_image = superslomo(image_0, image_1, adobe_dataset.dims, (adobe_dataset.s_y, adobe_dataset.s_x))
+    interpolated_image = superslomo(image_0, image_1, adobe_dataset, config.getfloat("TRAIN", "T_INTERP"))
 
-    print(interpolated_image.shape)
+    log.info(str(interpolated_image.shape))

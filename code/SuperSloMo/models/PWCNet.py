@@ -12,6 +12,9 @@ import os
 from correlation_package.modules.corr import Correlation
 import numpy as np
 from layers import *
+import logging
+
+log = logging.getLogger(__name__)
 
 
 
@@ -490,16 +493,16 @@ def pwc_dc_net(path=None, customweights=False):
     if path is not None:
         data = torch.load(path)
         if not customweights and 'state_dict' in data.keys():
-            print("Loading weights from PWCNet checkpoint.")
+            log.info("Loading weights from PWCNet checkpoint.")
             model.load_state_dict(data['state_dict'])
         elif customweights and 'stage1_stage_dict' in data.keys():
-            print("Loading weights from custom checkpoint.")
+            log.info("Loading weights from custom checkpoint.")
             model.load_state_dict(data['stage1_stage_dict'])
         else:
             model.load_state_dict(data)
-        print "Loaded weights for Flow Computation: ", path
+        log.info("Loaded weights for Flow Computation: "+str(path))
     else:
-        print "Not loading weights for Flow Computation."
+        log.info("Not loading weights for Flow Computation.")
 
     return model
 

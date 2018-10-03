@@ -2,7 +2,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
 import torch
+import logging
 
+log = logging.getLogger(__name__)
 
 class PerceptualLoss(nn.Module):
 
@@ -115,6 +117,6 @@ if __name__=='__main__':
     tensor_1 = torch.autograd.Variable(torch.randn([2, 2, 100, 100]), requires_grad=True).cuda()
     tensor_2 = torch.autograd.Variable(torch.randn([2, 3, 100, 100]), requires_grad=True).cuda()
     result = loss_smooth(tensor_1, tensor_2)
-    print(result.shape)
+    log.info(result.shape)
     result.backward()
 

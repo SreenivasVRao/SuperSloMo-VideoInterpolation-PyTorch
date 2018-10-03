@@ -1,4 +1,4 @@
-import sys
+import sys, logging
 import cv2
 import torch
 import numpy as np
@@ -7,6 +7,8 @@ from torch.autograd import Variable
 from scipy.ndimage import imread
 import SuperSloMo.models as models
 
+
+log = logging.getLogger(__name__)
 
 """
 Contact: Deqing Sun (deqings@nvidia.com); Zhile Ren (jrenzhile@gmail.com)
@@ -55,7 +57,7 @@ im_all = [im[:, :, :3] for im in im_all]
 divisor = 64.
 H = im_all[0].shape[0]
 W = im_all[0].shape[1]
-print(im_all[0].shape)
+log.info(im_all[0].shape)
 
 H_ = int(ceil(H / divisor) * divisor)
 W_ = int(ceil(W / divisor) * divisor)
@@ -91,11 +93,11 @@ flo = net(im_all)
 # v_ *= H / float(H_)
 # flo = np.dstack((u_, v_))
 #
-# print(flo.shape)
+# log.info(flo.shape)
 # writeFlowFile(flow_fn, flo)
 
 flo = flo*20.0
-print(type(flo))
+log.info(type(flo))
 upsampled_flo = torch.nn.functional.upsample(flo, size=(H, W), mode='bilinear')
 upsampled_flo[:, 0, ...] = upsampled_flo[:, 0, ...] * W / float(W_)
 upsampled_flo[:, 1, ...] = upsampled_flo[:, 1, ...] * H / float(H_)
@@ -103,7 +105,7 @@ upsampled_flo = upsampled_flo.permute(0, 2, 3, 1)
 
 flo = upsampled_flo.cpu().data.numpy()
 flo = flo[0, ... ]
-print(flo.shape)
+log.info(""+str(flo.shape))
 writeFlowFile(flow_fn, flo)
 
 
