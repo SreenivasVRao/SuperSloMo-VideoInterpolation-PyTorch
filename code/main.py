@@ -39,61 +39,21 @@ class SSM_Main:
         self.writer = SummaryWriter(os.path.join(log_dir, self.expt_name, "plots"))
         if message:
             self.writer.add_text("ExptInfo", message)
-        self.superslomo = self.load_model()
-
-    def load_model(self):
-        """
-        Loads the models, optionally with weights, and optionally freezing individual stages.
-        :return: the SuperSloMo model.
-        """
-
-        top_dir = self.cfg.get("PROJECT", "DIR")
-        stage1_weights = None
-        stage2_weights = None
-
-        if self.cfg.getboolean("STAGE1", "LOADPREV"):
-            stage1_weights = self.cfg.get("STAGE1", "WEIGHTS")
-            stage1_weights = os.path.join(top_dir, stage1_weights)
-
-        if self.cfg.getboolean("STAGE2", "LOADPREV"):
-            stage1_weights = self.cfg.get("STAGE1", "WEIGHTS")
-            stage1_weights = os.path.join(top_dir, stage1_weights)
-
-        model = SSM.full_model(self.cfg, stage1_weights, stage2_weights).cuda()
-        if self.cfg.getboolean("STAGE1", "FREEZE"):
-            log.info("Freezing stage1 model.")
-            model.stage1_model.eval()
-            for param in model.stage1_model.parameters():
-                param.requires_grad = False
-        else:
-            log.info("Training stage1 model.")
-
-        if self.cfg.getboolean("STAGE2", "FREEZE"):
-            log.info("Freezing stage2 model.")
-            model.stage2_model.eval()
-            for param in model.stage2_model.parameters():
-                param.requires_grad = False
-        else:
-            log.info("Training stage2 model.")
-
-        return model
+        self.superslomo = SSM.full_model(self.cfg).cuda()
+        if torch.cuda.device_count()>0:
+            self.superslomo = torch.nn.DataParallel(self.superslomo)
 
     def get_hyperparams(self):
         """
         Reads the config to get training hyperparameters.
         :return:
         """
-        lambda_r = self.cfg.getfloat("TRAIN", "LAMBDA_R") # reconstruction loss weighting
-        lambda_w = self.cfg.getfloat("TRAIN", "LAMBDA_W") # warp loss weighting
-        lambda_s = self.cfg.getfloat("TRAIN", "LAMBDA_S") # smoothness loss weighting
-        lambda_p = self.cfg.getfloat("TRAIN", "LAMBDA_P") # perceptual loss weighting
 
         self.n_epochs = self.cfg.getint("TRAIN", "N_EPOCHS")
         self.learning_rate = self.cfg.getfloat("TRAIN", "LEARNING_RATE")
         self.lr_decay = self.cfg.getfloat("TRAIN", "LR_DECAY")
         self.lr_period = self.cfg.getfloat("TRAIN", "LR_PERIOD")
 
-        self.loss_weights = lambda_r, lambda_p, lambda_w, lambda_s
         self.t_interp = self.cfg.getfloat("TRAIN", "T_INTERP")
         self.save_every= self.cfg.getint("TRAIN", "SAVE_EVERY")
 
@@ -148,25 +108,18 @@ class SSM_Main:
 
         img_0, img_t, img_1 = self.np2torch(numpy_batch)
 
-        results = self.superslomo(img_0, img_1, dataset, self.t_interp)
+        loss_flag = split=="TRAIN"
 
-        flowC_input, flowC_output, flowI_input, flowI_output = results
+        results = self.superslomo(img_0, img_1, dataset, self.t_interp, compute_losses=loss_flag, target_image=img_t)
+
+        interpolated_image, losses = results
         target_image = img_t
 
         if get_interpolation:
-
-            output_image = self.superslomo.stage2_model.compute_output_image(flowI_input,
-                                                                             flowI_output,
-                                                                             self.t_interp)
-            return output_image, target_image
+            return interpolated_image, target_image
 
         else:
-
-            train_losses = self.superslomo.stage2_model.compute_interpolation_losses(flowC_input, flowC_output,
-                                                                                     flowI_input, flowI_output,
-                                                                                     target_image, self.loss_weights,
-                                                                                     t=self.t_interp)
-            total_loss, individual_losses = train_losses
+            total_loss, individual_losses = losses
             self.write_losses(total_loss, individual_losses, iter, split)
             return total_loss, individual_losses
 
@@ -211,10 +164,14 @@ class SSM_Main:
                 self.learning_rate = self.learning_rate*self.lr_decay
 
             if epoch%self.save_every==0:
+                if isinstance(self.superslomo, torch.nn.DataParallel):
+                    model = self.superslomo.module
+                else:
+                    model = self.superslomo
                 state = {
                     'epoch': epoch,
-                    'stage1_state_dict': self.superslomo.stage1_model.state_dict(),
-                    'stage2_state_dict': self.superslomo.stage2_model.state_dict(),
+                    'stage1_state_dict': model.stage1_model.state_dict(),
+                    'stage2_state_dict': model.stage2_model.state_dict(),
                     'optimizer': optimizer.state_dict(),
                 }
 
@@ -222,7 +179,6 @@ class SSM_Main:
                                      self.expt_name, self.expt_name+"_EPOCH_"+str(epoch).zfill(4)+".pt")
 
                 torch.save(state, fpath)
-
 
         self.writer.close()
 

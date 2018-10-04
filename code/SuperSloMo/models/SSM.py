@@ -11,9 +11,32 @@ log = logging.getLogger(__name__)
 
 class FullModel(nn.Module):
 
-    def __init__(self, cfg, stage1_weights=None, stage2_weights=None):
+    def __init__(self, cfg):
         super(FullModel, self).__init__()
         self.cfg = cfg
+        self.load_model()
+        lambda_r = self.cfg.getfloat("TRAIN", "LAMBDA_R") # reconstruction loss weighting
+        lambda_w = self.cfg.getfloat("TRAIN", "LAMBDA_W") # warp loss weighting
+        lambda_s = self.cfg.getfloat("TRAIN", "LAMBDA_S") # smoothness loss weighting
+        lambda_p = self.cfg.getfloat("TRAIN", "LAMBDA_P") # perceptual loss weighting
+        self.loss_weights = lambda_r, lambda_p, lambda_w, lambda_s
+
+
+
+    def load_model(self):
+        """
+        Loads the models, optionally with weights, and optionally freezing individual stages.
+        :return:
+        """
+
+        stage1_weights = None
+        stage2_weights = None
+        if self.cfg.getboolean("STAGE1", "LOADPREV"):
+            stage1_weights = self.cfg.get("STAGE1", "WEIGHTS")
+
+        if self.cfg.getboolean("STAGE2", "LOADPREV"):
+            stage2_weights = self.cfg.get("STAGE2", "WEIGHTS")
+
         if self.cfg.get("STAGE1", "MODEL")=="PWC":
             self.stage1_model = PWCNet.pwc_dc_net(stage1_weights)  # Flow Computation Model
 
@@ -23,6 +46,22 @@ class FullModel(nn.Module):
         # Flow Computation Model
         self.stage2_model = UNetFlow.get_model(stage2_weights, in_channels=16,
                                                out_channels=11)  # Flow Interpolation Model
+
+        if self.cfg.getboolean("STAGE1", "FREEZE"):
+            log.info("Freezing stage1 model.")
+            self.stage1_model.eval()
+            for param in self.stage1_model.parameters():
+                param.requires_grad = False
+        else:
+            log.info("Training stage1 model.")
+
+        if self.cfg.getboolean("STAGE2", "FREEZE"):
+            log.info("Freezing stage2 model.")
+            self.stage2_model.eval()
+            for param in self.stage2_model.parameters():
+                param.requires_grad = False
+        else:
+            log.info("Training stage2 model.")
 
     def stage1_computations(self, img0, img1):
         """
@@ -58,7 +97,7 @@ class FullModel(nn.Module):
 
         return upsampled_flow
 
-    def forward(self, image_0, image_1, dataset, t_interp):
+    def forward(self, image_0, image_1, dataset, t_interp, compute_losses=False, target_image=None):
 
         img_tensor, flow_tensor = self.stage1_computations(image_0, image_1)
         if self.cfg.get("STAGE1","MODEL")=="PWC":
@@ -71,14 +110,17 @@ class FullModel(nn.Module):
 
         interpolation_result = self.stage2_model.compute_output_image(flowI_input, flowI_output, t=t_interp)
 
-        if self.training:
-            return img_tensor, flow_tensor, flowI_input, flowI_output
-        else:
-            return interpolation_result
+        losses = None
+        if compute_losses:
+            losses = self.stage2_model.compute_interpolation_losses(img_tensor, flow_tensor,
+                                                           flowI_input, flowI_output,
+                                                           target_image, self.loss_weights,
+                                                           t_interp)
 
+        return interpolation_result, losses
 
-def full_model(config, stage1_weights, stage2_weights):
-    model = FullModel(config, stage1_weights, stage2_weights)
+def full_model(config):
+    model = FullModel(config)
     return model
 
 
@@ -91,7 +133,15 @@ if __name__ == '__main__':
     config.read("../../config.ini")
 
     stage1_weights = os.path.join(config.get("PROJECT", "DIR"), config.get("STAGE1", "WEIGHTS"))
-    full_model(config, stage1_weights, None)
+    model = full_model(config)
+    print(type(model))
+    print isinstance(model, nn.DataParallel)
+    print isinstance(model, nn.Module)
+
+    model = nn.DataParallel(model)
+    print(type(model))
+    print isinstance(model, nn.Module)
+    print isinstance(model, nn.DataParallel)
     exit(0)
 
     adobe_dataset = adobe_240fps.Reader(config, split="TRAIN")
