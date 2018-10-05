@@ -17,6 +17,9 @@ class Reader(DataLoader):
 
         self.cfg = cfg
         self.compute_scale_factors()
+        self.t_interp = self.cfg.getfloat("TRAIN", "T_INTERP")
+        self.t_index = int(math.floor(self.t_interp*9)) # bad code.
+
         self.clips = self.read_clip_list(split)
         self.split = split
         self.transform = transform
@@ -40,11 +43,36 @@ class Reader(DataLoader):
             if len(d)<=2:
                 nframes = int(d)
                 img_paths = data[idx + 1 : idx + 1 + nframes]
+                img_paths = self.get_required_images(img_paths)
                 clips.append(img_paths)
             else:
                 continue
 
         return clips
+
+    def get_required_images(self, image_list):
+        n_frames = len(image_list)
+
+        if n_frames == 9:
+            pass
+
+        elif n_frames < 12:
+            start_idx = random.randint(0, n_frames - 9) # random starting point to get 9 frames.
+            image_list = image_list[start_idx: start_idx + 9]
+
+        elif n_frames >= 12:
+            subset = random.randint(0, n_frames-12) # random starting point to get subset of 12 frames.
+            image_list = image_list[subset:subset+12]
+
+            start_idx = random.randint(0, 3) # random starting point to get subset of 9 frames.
+            image_list = image_list[start_idx:start_idx+9]
+
+        assert len(image_list)==9 and 0<self.t_index < 9, "Something went wrong."
+        image_list = [image_list[0], image_list[self.t_index], image_list[-1]]
+
+        return image_list
+
+
 
     def compute_scale_factors(self):
 
@@ -110,37 +138,15 @@ class ToTensor(object):
         sample = sample.permute(0, 3, 2, 1) # n_frames, H W C -> n_frames, C, H, W
         return sample
 
+def data_generator(config, split):
+    transformations = transforms.Compose([ResizeCrop(), ToTensor()])
+    batch_size = config.getint(split, "BATCH_SIZE")
 
-def collate_fn(data):
-    """
-    Custom collate function.
-    :params data: list of tensors to collate. each of size [n_frames, C, H, W]
-    :return batch_data: batch of size B, 9, C, H, W
-    """
+    dataset = Reader(config, split, transform=transformations)
+    adobe_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=16)
 
-    for idx in range(len(data)):
-        tensor_data = data[idx]
-        assert len(tensor_data.shape)==4, "Shape: "+str(tensor_data.shape)
-        n_frames = tensor_data.shape[0]
-        if n_frames == 9:
-            continue
-
-        elif n_frames < 12:
-            start_idx = random.randint(0, n_frames - 9) # random starting point to get 9 frames.
-            clip = tensor_data[start_idx: start_idx + 9, ...]
-            data[idx] = clip
-
-        elif n_frames >= 12:
-            subset = random.randint(0, n_frames-12) # random starting point to get subset of 12 frames.
-            clip_12 = tensor_data[subset:subset+12, ...]
-
-            start_idx = random.randint(0, 3) # random starting point to get subset of 9 frames.
-            clip = clip_12[start_idx:start_idx+9, ...]
-            data[idx] = clip
-
-    batch = torch.stack(data)
-    return batch
-
+    for batch_sample in adobe_loader:
+        yield batch_sample
 
 
 
@@ -161,25 +167,14 @@ if __name__ == '__main__':
     config.read(args.config)
     logging.info("Read config")
 
-    transformations = transforms.Compose([ResizeCrop(), ToTensor()])
-
-    batch_size = config.getint("TRAIN", "BATCH_SIZE")
-
-    adobe_dataset = Reader(config, split="TRAIN", transform=transformations)
-
+    samples = data_generator(config, "TRAIN")
     import time
-
-    adobe_loader = DataLoader(adobe_dataset, batch_size=batch_size, shuffle=True, num_workers=16, collate_fn=collate_fn)
-
     start = time.time()
 
-    for idx, batch_sample in enumerate(adobe_loader):
+    for idx in range(20):
         log.info(str(idx))
-        if idx==19:
-            break
+        next(samples)
 
-
-    log.info(str(batch_sample.shape)+" shape of input tensor.")
 
     stop = time.time()
     total = (stop - start)
