@@ -57,26 +57,6 @@ class SSM_Main:
         self.t_interp = self.cfg.getfloat("TRAIN", "T_INTERP")
         self.save_every= self.cfg.getint("TRAIN", "SAVE_EVERY")
 
-    def np2torch(self, data):
-        """
-        Converts numpy data into Torch Variable. B n_frames H W C
-        :param data:
-        :return: three tensors - BCHW I_0, I_t, I_1
-        """
-        oneBatch = Variable(torch.from_numpy(data)).cuda().float()
-
-        oneBatch = oneBatch.permute(0, 1, 4, 2, 3)
-        n_frames = data.shape[1]
-
-        t_index = math.floor(self.t_interp*n_frames) # floor(0.5 * 9) = 4
-        t_index = int(t_index)
-
-        image_0 = oneBatch[:, 0,  ...]
-        image_t = oneBatch[:, t_index, ...]
-        image_1 = oneBatch[:, -1, ...]
-
-        return image_0, image_t, image_1
-
     def write_losses(self, total_loss, individual_losses, iteration, split):
         """
         Writes the losses to tensorboard for given iteration and split.
@@ -96,32 +76,27 @@ class SSM_Main:
         # self.writer.add_scalars('Smoothness_Loss', {split: loss_smooth.data[0]}, iteration)
         self.writer.add_scalars('Warping_Loss', {split: loss_warp.data[0]}, iteration)
 
-    def forward_pass(self, numpy_batch, dataset, split, iter, get_interpolation=False):
+    def forward_pass(self, data_batch, dataset_info, split, iteration, get_interpolation=False):
         """
-        :param numpy_batch: B H W C 0-255, np.uint8
-        :param dataset: dataset object with corresponding split.
+        :param data_batch: B H W C 0-255, np.uint8
+        :param dataset_info: dataset object with corresponding split.
         :param split: "TRAIN"/"TEST"/"VAL"
         :param get_interpolation: flag to return interpolation result
         :return: if get_interpolation is set, returns interpolation result as BCHW Variable.
         otherwise returns the losses.
         """
 
-        img_0, img_t, img_1 = self.np2torch(numpy_batch)
+        img_0 = data_batch[:, 0, ...]
+        img_t = data_batch[:, 1, ...]
+        img_1 = data_batch[:,-1, ...]
 
-        loss_flag = split=="TRAIN"
+        loss_flag = split in ["TRAIN", "VAL"]
 
-        results = self.superslomo(img_0, img_1, dataset, self.t_interp, compute_losses=loss_flag, target_image=img_t)
+        results = self.superslomo(img_0, img_1, dataset_info, self.t_interp,
+                                  compute_losses=loss_flag, target_image=img_t)
 
-        interpolated_image, losses = results
-        target_image = img_t
-
-        if get_interpolation:
-            return interpolated_image, target_image
-
-        else:
-            total_loss, individual_losses = losses
-            self.write_losses(total_loss, individual_losses, iter, split)
-            return total_loss, individual_losses
+        total_loss = results[0]
+        return total_loss
 
     def train(self):
         """
@@ -132,33 +107,34 @@ class SSM_Main:
 
         optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.superslomo.parameters()),
                                      lr=self.learning_rate)
-        iter = 0
+        iteration = 0
 
         for epoch in range(self.n_epochs):
             # shuffles the data on each epoch
-            adobe_train = adobe_240fps.Reader(self.cfg, split="TRAIN")
-            adobe_val = adobe_240fps.Reader(self.cfg, split="VAL")
-            val_generator = adobe_val.get_clips()
+            adobe_train_samples = adobe_240fps.data_generator(self.cfg, split="TRAIN")
+            adobe_val_samples = adobe_240fps.data_generator(self.cfg, split="VAL")
 
-            log.info("Epoch: "+str(epoch)+" Iteration: "+str(iter))
+            train_info = adobe_240fps.get_data_info(self.cfg, split="TRAIN")
+            val_info = adobe_240fps.get_data_info(self.cfg, split="VAL")
 
-            for train_batch in adobe_train.get_clips():
-                iter +=1
+            log.info("Epoch: "+str(epoch)+" Iteration: "+str(iteration))
 
-                train_loss, _ = self.forward_pass(train_batch, adobe_train, "TRAIN", iter)
+            for train_batch in adobe_train_samples:
+                iteration +=1
+
+                train_loss, _ = self.forward_pass(train_batch, train_info, "TRAIN", iteration)
 
                 optimizer.zero_grad()
                 train_loss.backward()
                 optimizer.step()
 
                 try:
-                    val_batch = next(val_generator)
+                    val_batch = next(adobe_val_samples)
                 except StopIteration:
-                    adobe_val = adobe_240fps.Reader(self.cfg, split="VAL")
-                    val_generator = adobe_val.get_clips()
-                    val_batch = next(val_generator)
+                    adobe_val_samples = adobe_240fps.data_generator(self.cfg, split="VAL")
+                    val_batch = next(adobe_val_samples)
 
-                self.forward_pass(val_batch, adobe_val, "VAL", iter)
+                self.forward_pass(val_batch, val_info, "VAL", iteration)
 
             if epoch%self.lr_period==0 and epoch>0:
                 self.learning_rate = self.learning_rate*self.lr_decay

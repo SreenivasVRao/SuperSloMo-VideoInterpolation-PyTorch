@@ -138,6 +138,7 @@ class ToTensor(object):
         sample = sample.permute(0, 3, 2, 1) # n_frames, H W C -> n_frames, C, H, W
         return sample
 
+
 def data_generator(config, split):
     transformations = transforms.Compose([ResizeCrop(), ToTensor()])
     batch_size = config.getint(split, "BATCH_SIZE")
@@ -148,6 +149,11 @@ def data_generator(config, split):
     for batch_sample in adobe_loader:
         yield batch_sample
 
+
+def get_data_info(config, split):
+    transformations = transforms.Compose([ResizeCrop(), ToTensor()])
+    dataset = Reader(config, split, transform=transformations)
+    return dataset.dims, dataset.scale_factors
 
 
 if __name__ == '__main__':

@@ -83,7 +83,8 @@ class FullModel(nn.Module):
 
         return img_tensor, flow_tensor
 
-    def post_process_flow(self, flow_tensor, dims, scale_factors):
+    def post_process_flow(self, flow_tensor, dataset_info):
+        dims, scale_factors = dataset_info
         flow_tensor = flow_tensor * 20.0
         H, W = dims
         upsampled_flow = F.upsample(flow_tensor, size=(H, W), mode='bilinear')
@@ -97,27 +98,27 @@ class FullModel(nn.Module):
 
         return upsampled_flow
 
-    def forward(self, image_0, image_1, dataset, t_interp, compute_losses=False, target_image=None):
+    def forward(self, image_0, image_1, dataset_info, t_interp, compute_losses=False, target_image=None):
 
         img_tensor, flow_tensor = self.stage1_computations(image_0, image_1)
         if self.cfg.get("STAGE1","MODEL")=="PWC":
-            flow_tensor = self.post_process_flow(flow_tensor, dataset.dims, dataset.scale_factors)
+            flow_tensor = self.post_process_flow(flow_tensor, dataset_info)
         else:
             pass
 
         flowI_input = self.stage2_model.compute_inputs(img_tensor, flow_tensor, t=t_interp)
         flowI_output = self.stage2_model(flowI_input)
 
-        interpolation_result = self.stage2_model.compute_output_image(flowI_input, flowI_output, t=t_interp)
+        # interpolation_result = self.stage2_model.compute_output_image(flowI_input, flowI_output, t=t_interp)
 
         losses = None
         if compute_losses:
             losses = self.stage2_model.compute_interpolation_losses(img_tensor, flow_tensor,
-                                                           flowI_input, flowI_output,
-                                                           target_image, self.loss_weights,
-                                                           t_interp)
+                                                                    flowI_input, flowI_output,
+                                                                    target_image,
+                                                                    self.loss_weights, t_interp)
 
-        return interpolation_result, losses
+        return losses
 
 def full_model(config):
     model = FullModel(config)
