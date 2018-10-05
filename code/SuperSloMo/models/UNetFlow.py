@@ -409,9 +409,11 @@ class UNet(nn.Module):
 
         lambda_r, lambda_p, lambda_w, lambda_s = loss_weights
 
-        total_loss = lambda_r * loss_reconstr + \
-                     lambda_w * loss_warp + lambda_p * loss_perceptual
-        return total_loss, (loss_reconstr, loss_perceptual, loss_warp)
+        total_loss = lambda_r * loss_reconstr + lambda_w * loss_warp + lambda_p * loss_perceptual
+        loss_list = [total_loss, loss_reconstr, loss_warp, loss_perceptual]
+
+        loss_tensor = torch.stack(loss_list).squeeze()
+        return loss_tensor
 
 
 def get_model(path, in_channels, out_channels, verbose=False):
