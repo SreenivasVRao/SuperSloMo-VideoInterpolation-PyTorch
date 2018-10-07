@@ -1,7 +1,7 @@
 from SuperSloMo.models import SSM, SSMLosses
 from SuperSloMo.utils import adobe_240fps, metrics
 import numpy as np
-
+import time
 import torch.optim
 import torch
 
@@ -40,7 +40,7 @@ class SSM_Main:
         self.superslomo = SSM.full_model(self.cfg).cuda()
         if torch.cuda.device_count()>0:
             self.superslomo = torch.nn.DataParallel(self.superslomo)
-        self.loss = SSMLosses.get_loss(self.cfg)
+        self.loss = SSMLosses.get_loss(self.cfg).cuda()
 
     def get_hyperparams(self):
         """
@@ -106,6 +106,8 @@ class SSM_Main:
                                      lr=self.learning_rate)
         iteration = 0
 
+        prev_t = time.time()
+
         for epoch in range(self.n_epochs):
             # shuffles the data on each epoch
             adobe_train_samples = adobe_240fps.data_generator(self.cfg, split="TRAIN")
@@ -132,6 +134,11 @@ class SSM_Main:
                     val_batch = next(adobe_val_samples)
 
                 self.forward_pass(val_batch, val_info, "VAL", iteration)
+                delta_t = time.time() - prev_t
+                log.info(str(iteration)+" "+delta_t)
+                if iteration==20:
+                    break
+            break
 
             if epoch%self.lr_period==0 and epoch>0:
                 self.learning_rate = self.learning_rate*self.lr_decay

@@ -99,7 +99,7 @@ class FullModel(nn.Module):
 
         img_tensor, flow_tensor = self.stage1_computations(image_0, image_1, dataset_info)
         flowI_input = self.stage2_model.compute_inputs(img_tensor, flow_tensor, t=t_interp)
-        flowI_output, interpolation_result = self.stage2_model(img_tensor, flow_tensor)
+        flowI_output, interpolation_result = self.stage2_model(flowI_input, t_interp)
 
         return img_tensor, flow_tensor, flowI_input, flowI_output, interpolation_result
 

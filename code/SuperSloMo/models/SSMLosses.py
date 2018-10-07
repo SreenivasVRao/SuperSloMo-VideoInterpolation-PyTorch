@@ -149,7 +149,28 @@ class SSMLosses(nn.Module):
         lambda_w = cfg.getfloat("TRAIN", "LAMBDA_W") # warp loss weighting
         lambda_s = cfg.getfloat("TRAIN", "LAMBDA_S") # smoothness loss weighting
         lambda_p = cfg.getfloat("TRAIN", "LAMBDA_P") # perceptual loss weighting
-        self.loss_weights = lambda_r, lambda_p, lambda_w, lambda_s
+        return lambda_r, lambda_p, lambda_w, lambda_s
+
+    def extract_outputs(self, output_tensor):
+        """
+        Extracts different elements in the output tensor.
+
+        :param output_tensor: Output from the flow interpolation model.
+        :return: The extract elements.
+        """
+
+        img_1 = output_tensor[:, :3, ...] # Image 1
+        v_1t = output_tensor[:, 3, ...] # Visibility Map 1-> t
+        dflow_t1 = output_tensor[:, 4:6, ...] # Residual of flow t->1
+        dflow_t0 = output_tensor[:, 6:8, ...] # Residual of flow t->0
+        img_0 = output_tensor[:, 8:, ...] # Image 0
+
+        v_1t = v_1t[:, None, ...] # making dimensions compatible
+
+        v_0t = 1 - v_1t # Visibility Map 0->t
+
+        return img_1, v_1t, dflow_t1, dflow_t0, v_0t, img_0
+
 
     def get_reconstruction_loss(self, interpolated_image, target_image):
         return self.reconstr_loss_fn(interpolated_image, target_image)

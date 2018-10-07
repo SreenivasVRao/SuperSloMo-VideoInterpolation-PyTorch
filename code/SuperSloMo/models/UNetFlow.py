@@ -13,7 +13,6 @@ class UNet(nn.Module):
         self.batchNorm = batch_norm
         self.verbose = verbose
         self.build_model(in_channels, out_channels)
-        self.define_losses()
 
     def concat_tensors(self, tensor1, tensor2):
         """
