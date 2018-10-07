@@ -135,7 +135,7 @@ class ToTensor(object):
 
     def __call__(self, sample):
         sample = torch.from_numpy(sample)
-        sample = sample.permute(0, 3, 2, 1) # n_frames, H W C -> n_frames, C, H, W
+        sample = sample.permute(0, 3, 1, 2) # n_frames, H W C -> n_frames, C, H, W
         return sample
 
 
@@ -144,9 +144,10 @@ def data_generator(config, split):
     batch_size = config.getint(split, "BATCH_SIZE")
 
     dataset = Reader(config, split, transform=transformations)
-    adobe_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=16)
+    adobe_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=4)
 
     for batch_sample in adobe_loader:
+        batch_sample = batch_sample.cuda().float()
         yield batch_sample
 
 
@@ -179,8 +180,8 @@ if __name__ == '__main__':
 
     for idx in range(20):
         log.info(str(idx))
-        next(samples)
-
+        batch = next(samples)
+        log.info(batch.shape)
 
     stop = time.time()
     total = (stop - start)
