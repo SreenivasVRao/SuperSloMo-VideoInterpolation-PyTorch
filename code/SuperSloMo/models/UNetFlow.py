@@ -1,5 +1,4 @@
 from layers import *
-from custom_losses import PerceptualLoss, SmoothnessLoss
 import torch.nn as nn
 import torch.nn.functional as F
 import torch
@@ -150,21 +149,7 @@ class UNet(nn.Module):
         self.conv11a = conv(in_planes=96, out_planes=32, kernel_size=3)
         self.conv11b = conv(in_planes=32, out_planes=out_channels, kernel_size=3)
 
-    def define_losses(self):
-        self.reconstr_loss_fn = nn.L1Loss()
-        self.perceptual_loss_fn = PerceptualLoss()
-        self.smooth_loss_1 = SmoothnessLoss()
-        self.smooth_loss_2 = SmoothnessLoss()
-
-        self.warp_loss_1 = nn.L1Loss()
-        self.warp_loss_2 = nn.L1Loss()
-        self.warp_loss_3 = nn.L1Loss()
-        self.warp_loss_4 = nn.L1Loss()
-
-        self.flownet_loss_1 = nn.MSELoss()
-        self.flownet_loss_2 = nn.MSELoss()
-
-    def forward(self, input_tensor):
+    def forward(self, flowI_input, t_interp):
         """
         :param input_tensor: input: N,18, H, W,
         batch_size = N
@@ -173,10 +158,11 @@ class UNet(nn.Module):
         interpolation result
 
         """
-        if self.verbose:
-            log.info("Input: " + str(input_tensor.shape))
 
-        conv1a_out = self.conv1a(input_tensor)
+        if self.verbose:
+            log.info("Input: " + str(flowI_input.shape))
+
+        conv1a_out = self.conv1a(flowI_input)
         conv1b_out = self.conv1b(conv1a_out)
 
         if self.verbose:
@@ -261,7 +247,9 @@ class UNet(nn.Module):
         if self.verbose:
             log.info("Output Block 11: "+str(conv11b_out.shape))
 
-        return conv11b_out
+        flowI_output = conv11b_out
+        interpolation_result = self.compute_output_image(flowI_input, flowI_output, t=t_interp)
+        return flowI_output, interpolation_result
 
     def compute_inputs(self, img_tensor, flow_pred_tensor, t):
         """
@@ -347,73 +335,6 @@ class UNet(nn.Module):
         pred_img_t = weighted_sum/normalization_factor
 
         return pred_img_t
-
-    def get_reconstruction_loss(self, interpolated_image, target_image):
-
-        loss_reconstr = self.reconstr_loss_fn(interpolated_image, target_image)
-
-        return loss_reconstr
-
-    def get_warp_loss(self, img_tensor, flow_tensor, input_tensor, output_tensor, target_image):
-
-        flow_01 = flow_tensor[:,:2,  ...]
-        flow_10 = flow_tensor[:, 2:, ...]
-
-        img_1 = img_tensor[:,:3,...]
-        img_0 = img_tensor[:,3:,...]
-
-        pred_img_10 = warp(img_1, - flow_01) # flow img 1 to img 0
-        pred_img_01 = warp(img_0, - flow_10) # flow img 0 to img 1
-
-        flow_t1 = input_tensor[:, 6:8, ...] # Estimated flow t->1
-        flow_t0= input_tensor[:, 8:10, ...] # Estimated flow t->0
-
-        pred_img_1, pred_v_1t, pred_dflow_t1, \
-        pred_dflow_t0, pred_v_0t, pred_img_0 = self.extract_outputs(output_tensor)
-
-        pred_flow_t1 = flow_t1 + pred_dflow_t1
-        pred_flow_t0 = flow_t0 + pred_dflow_t0
-
-        pred_img_0t = warp(pred_img_0, -pred_flow_t0) # backward warping to produce img at time t
-        pred_img_1t = warp(pred_img_1, -pred_flow_t1) # backward warping to produce img at time t
-
-        loss_warp = self.warp_loss_1(pred_img_10, img_0) + \
-                    self.warp_loss_2(pred_img_01, img_1) + \
-                    self.warp_loss_3(pred_img_0t, target_image) + \
-                    self.warp_loss_4(pred_img_1t, target_image)
-
-        return loss_warp
-
-    def get_perceptual_loss(self, img, target_img):
-        loss_perceptual = self.perceptual_loss_fn(img, target_img)
-        return loss_perceptual
-
-    def compute_interpolation_losses(self, img_tensor, flow_tensor, input_tensor,
-                                     output_tensor, target_image, loss_weights, t):
-        """
-
-        :param img_tensor: Input to Flow Computation Model B, 6, H, W
-        :param flow_tensor: Output from Flow Computation Model B, 4, H, W
-        :param input_tensor: Input to Flow Interpolation Model B, 16, H, W
-        :param output_tensor: Output from Flow Interpolation Model B, 11, H, W
-        :param target_image: interpolation ground truth B, 3, H, W
-        :param loss_weights: tuple of 4 weights (reconstr, smooth, warp, perceptual)
-        :param t: time step of interpolation
-        :return: total loss as weighted sum of losses.
-        """
-
-        interpolated_image = self.compute_output_image(input_tensor, output_tensor, t)
-        loss_reconstr = self.get_reconstruction_loss(interpolated_image, target_image)
-        loss_perceptual = self.get_perceptual_loss(interpolated_image, target_image)
-        loss_warp = self.get_warp_loss(img_tensor, flow_tensor, input_tensor, output_tensor, target_image)
-
-        lambda_r, lambda_p, lambda_w, lambda_s = loss_weights
-
-        total_loss = lambda_r * loss_reconstr + lambda_w * loss_warp + lambda_p * loss_perceptual
-        loss_list = [total_loss, loss_reconstr, loss_warp, loss_perceptual]
-
-        loss_tensor = torch.stack(loss_list).squeeze()
-        return loss_tensor
 
 
 def get_model(path, in_channels, out_channels, verbose=False):

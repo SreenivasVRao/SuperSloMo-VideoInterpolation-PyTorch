@@ -1,6 +1,5 @@
 import PWCNet
 import UNetFlow
-
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
@@ -15,13 +14,6 @@ class FullModel(nn.Module):
         super(FullModel, self).__init__()
         self.cfg = cfg
         self.load_model()
-        lambda_r = self.cfg.getfloat("TRAIN", "LAMBDA_R") # reconstruction loss weighting
-        lambda_w = self.cfg.getfloat("TRAIN", "LAMBDA_W") # warp loss weighting
-        lambda_s = self.cfg.getfloat("TRAIN", "LAMBDA_S") # smoothness loss weighting
-        lambda_p = self.cfg.getfloat("TRAIN", "LAMBDA_P") # perceptual loss weighting
-        self.loss_weights = lambda_r, lambda_p, lambda_w, lambda_s
-
-
 
     def load_model(self):
         """
@@ -63,7 +55,7 @@ class FullModel(nn.Module):
         else:
             log.info("Training stage2 model.")
 
-    def stage1_computations(self, img0, img1):
+    def stage1_computations(self, img0, img1, dataset_info):
         """
         Refer to PWC-Net repo for more details.
         :param img0, img1: torch tensor BGR (0, 255.0)
@@ -80,6 +72,11 @@ class FullModel(nn.Module):
 
         img_tensor = input_pair_01
         flow_tensor = torch.cat([est_flow_01, est_flow_10], dim=1)
+
+        if self.cfg.get("STAGE1","MODEL")=="PWC":
+            flow_tensor = self.post_process_flow(flow_tensor, dataset_info)
+        else:
+            pass
 
         return img_tensor, flow_tensor
 
@@ -98,27 +95,14 @@ class FullModel(nn.Module):
 
         return upsampled_flow
 
-    def forward(self, image_0, image_1, dataset_info, t_interp, compute_losses=False, target_image=None):
+    def forward(self, image_0, image_1, dataset_info, t_interp):
 
-        img_tensor, flow_tensor = self.stage1_computations(image_0, image_1)
-        if self.cfg.get("STAGE1","MODEL")=="PWC":
-            flow_tensor = self.post_process_flow(flow_tensor, dataset_info)
-        else:
-            pass
-
+        img_tensor, flow_tensor = self.stage1_computations(image_0, image_1, dataset_info)
         flowI_input = self.stage2_model.compute_inputs(img_tensor, flow_tensor, t=t_interp)
-        flowI_output = self.stage2_model(flowI_input)
+        flowI_output, interpolation_result = self.stage2_model(img_tensor, flow_tensor)
 
-        # interpolation_result = self.stage2_model.compute_output_image(flowI_input, flowI_output, t=t_interp)
+        return img_tensor, flow_tensor, flowI_input, flowI_output, interpolation_result
 
-        losses = None
-        if compute_losses:
-            losses = self.stage2_model.compute_interpolation_losses(img_tensor, flow_tensor,
-                                                                    flowI_input, flowI_output,
-                                                                    target_image,
-                                                                    self.loss_weights, t_interp)
-
-        return losses
 
 def full_model(config):
     model = FullModel(config)

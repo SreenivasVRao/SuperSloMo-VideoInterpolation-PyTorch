@@ -1,11 +1,9 @@
-from SuperSloMo.models import SSM
+from SuperSloMo.models import SSM, SSMLosses
 from SuperSloMo.utils import adobe_240fps, metrics
-import math
 import numpy as np
 
 import torch.optim
 import torch
-from torch.autograd import Variable
 
 from tensorboardX import SummaryWriter
 import os, logging, ConfigParser
@@ -42,6 +40,7 @@ class SSM_Main:
         self.superslomo = SSM.full_model(self.cfg).cuda()
         if torch.cuda.device_count()>0:
             self.superslomo = torch.nn.DataParallel(self.superslomo)
+        self.loss = SSMLosses.get_loss(self.cfg)
 
     def get_hyperparams(self):
         """
@@ -90,13 +89,11 @@ class SSM_Main:
         img_t = data_batch[:, 1, ...]
         img_1 = data_batch[:,-1, ...]
 
+        results = self.superslomo(img_0, img_1, dataset_info, self.t_interp)
         loss_flag = split in ["TRAIN", "VAL"]
-
-        results = self.superslomo(img_0, img_1, dataset_info, self.t_interp,
-                                  compute_losses=loss_flag, target_image=img_t)
-
-        total_loss = results[0]
-        return total_loss
+        if loss_flag:
+            total_loss = self.loss(*results, target_image=img_t)[0]
+            return total_loss
 
     def train(self):
         """
@@ -122,11 +119,11 @@ class SSM_Main:
             for train_batch in adobe_train_samples:
                 iteration +=1
 
-                train_loss, _ = self.forward_pass(train_batch, train_info, "TRAIN", iteration)
+                train_loss = self.forward_pass(train_batch, train_info, "TRAIN", iteration)
 
-                optimizer.zero_grad()
-                train_loss.backward()
-                optimizer.step()
+                # optimizer.zero_grad()
+                # train_loss.backward()
+                # optimizer.step()
 
                 try:
                     val_batch = next(adobe_val_samples)
@@ -197,7 +194,6 @@ class SSM_Main:
         avg_PSNR = float(total_PSNR)/nframes
 
         return avg_PSNR, avg_IE, avg_ssim
-
 
 
 if __name__ == '__main__':
