@@ -104,6 +104,7 @@ class SSM_Main:
 
         optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.superslomo.parameters()),
                                      lr=self.learning_rate)
+        lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=self.lr_period,gamma=self.lr_decay)
         iteration = 0
 
         prev_t = time.time()
@@ -126,7 +127,7 @@ class SSM_Main:
 
                 optimizer.zero_grad()
                 train_loss.backward()
-                optimizer.step()
+                lr_scheduler.step()
 
                 try:
                     val_batch = next(adobe_val_samples)
@@ -141,9 +142,6 @@ class SSM_Main:
                 if iteration==20:
                     break
             break
-
-            if epoch%self.lr_period==0 and epoch>0:
-                self.learning_rate = self.learning_rate*self.lr_decay
 
             if epoch%self.save_every==0:
                 if isinstance(self.superslomo, torch.nn.DataParallel):
