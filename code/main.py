@@ -37,11 +37,9 @@ class SSM_Main:
         self.writer = SummaryWriter(os.path.join(log_dir, self.expt_name, "plots"))
         if message:
             self.writer.add_text("ExptInfo", message)
-        self.superslomo = SSM.full_model(self.cfg)
+        self.superslomo = SSM.full_model(self.cfg).cuda()
         if torch.cuda.device_count()>0:
             self.superslomo = torch.nn.DataParallel(self.superslomo)
-        else:
-            self.superslomo = self.superslomo.cuda()
         self.loss = SSMLosses.get_loss(self.cfg).cuda()
 
     def get_hyperparams(self):

@@ -22,8 +22,8 @@ class PerceptualLoss(nn.Module):
         self.vgg16_std = torch.autograd.Variable(torch.from_numpy(vgg16_std), requires_grad=False)
         self.vgg16_mean = torch.autograd.Variable(torch.from_numpy(vgg16_mean), requires_grad=False)
 
-        self.vgg16_std = self.vgg16_std.float()
-        self.vgg16_mean = self.vgg16_mean.float()
+        self.vgg16_std = self.vgg16_std.float().cuda()
+        self.vgg16_mean = self.vgg16_mean.float().cuda()
 
         self.vgg16.eval()
         self.eval()
