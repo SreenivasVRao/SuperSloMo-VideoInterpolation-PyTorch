@@ -142,9 +142,10 @@ class ToTensor(object):
 def data_generator(config, split):
     transformations = transforms.Compose([ResizeCrop(), ToTensor()])
     batch_size = config.getint(split, "BATCH_SIZE")
+    n_workers = config.getint("MISC", "N_WORKERS")
 
     dataset = Reader(config, split, transform=transformations)
-    adobe_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=4)
+    adobe_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=n_workers)
 
     for batch_sample in adobe_loader:
         batch_sample = batch_sample.cuda().float()

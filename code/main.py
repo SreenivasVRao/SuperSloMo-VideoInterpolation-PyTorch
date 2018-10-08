@@ -40,7 +40,7 @@ class SSM_Main:
         self.superslomo = SSM.full_model(self.cfg).cuda()
         if torch.cuda.device_count()>0:
             self.superslomo = torch.nn.DataParallel(self.superslomo)
-        self.loss = SSMLosses.get_loss(self.cfg).cuda()
+        self.loss = SSMLosses.get_loss(self.cfg)
 
     def get_hyperparams(self):
         """
@@ -123,9 +123,10 @@ class SSM_Main:
 
                 train_loss = self.forward_pass(train_batch, train_info, "TRAIN", iteration)
 
-                # optimizer.zero_grad()
-                # train_loss.backward()
-                # optimizer.step()
+
+                optimizer.zero_grad()
+                train_loss.backward()
+                optimizer.step()
 
                 try:
                     val_batch = next(adobe_val_samples)
@@ -135,7 +136,8 @@ class SSM_Main:
 
                 self.forward_pass(val_batch, val_info, "VAL", iteration)
                 delta_t = time.time() - prev_t
-                log.info(str(iteration)+" "+delta_t)
+                prev_t = time.time()
+                log.info(str(iteration)+" "+str(delta_t))
                 if iteration==20:
                     break
             break
