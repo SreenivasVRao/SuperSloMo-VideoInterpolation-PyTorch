@@ -11,7 +11,7 @@ log = logging.getLogger(__name__)
 
 class PerceptualLoss(nn.Module):
 
-    def __init__(self, use_cuda=True):
+    def __init__(self):
         super(PerceptualLoss, self).__init__()
         self.vgg16 = torchvision.models.vgg16(pretrained=True)
 
@@ -22,8 +22,8 @@ class PerceptualLoss(nn.Module):
         self.vgg16_std = torch.autograd.Variable(torch.from_numpy(vgg16_std), requires_grad=False)
         self.vgg16_mean = torch.autograd.Variable(torch.from_numpy(vgg16_mean), requires_grad=False)
 
-        self.vgg16_std = self.vgg16_std.float().cuda()
-        self.vgg16_mean = self.vgg16_mean.float().cuda()
+        self.vgg16_std = self.vgg16_std.float()
+        self.vgg16_mean = self.vgg16_mean.float()
 
         self.vgg16.eval()
         self.eval()
@@ -36,9 +36,6 @@ class PerceptualLoss(nn.Module):
         self.modulelist = list(self.vgg16.features.modules())
         self.modulelist = self.modulelist[1:23] # until conv4_3
 
-        if use_cuda:
-            self.vgg16.cuda()
-            self.cuda()
 
     def rescale(self, tensor):
         """
@@ -72,10 +69,8 @@ class PerceptualLoss(nn.Module):
 
 
 class SmoothnessLoss(nn.Module):
-    def __init__(self, use_cuda=True):
+    def __init__(self):
         super(SmoothnessLoss, self).__init__()
-        if use_cuda:
-            self.cuda()
         for param in self.parameters():
             param.requires_grad = False
 

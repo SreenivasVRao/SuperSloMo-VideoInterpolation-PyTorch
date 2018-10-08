@@ -37,10 +37,12 @@ class SSM_Main:
         self.writer = SummaryWriter(os.path.join(log_dir, self.expt_name, "plots"))
         if message:
             self.writer.add_text("ExptInfo", message)
-        self.superslomo = SSM.full_model(self.cfg).cuda()
+        self.superslomo = SSM.full_model(self.cfg)
         if torch.cuda.device_count()>0:
             self.superslomo = torch.nn.DataParallel(self.superslomo)
-        self.loss = SSMLosses.get_loss(self.cfg)
+        else:
+            self.superslomo = self.superslomo.cuda()
+        self.loss = SSMLosses.get_loss(self.cfg).cuda()
 
     def get_hyperparams(self):
         """
@@ -84,7 +86,7 @@ class SSM_Main:
         :return: if get_interpolation is set, returns interpolation result as BCHW Variable.
         otherwise returns the losses.
         """
-
+        data_batch = data_batch.cuda().float()
         img_0 = data_batch[:, 0, ...]
         img_t = data_batch[:, 1, ...]
         img_1 = data_batch[:,-1, ...]
