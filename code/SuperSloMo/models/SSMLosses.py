@@ -19,11 +19,12 @@ class PerceptualLoss(nn.Module):
 
         vgg16_mean = np.asarray([0.485, 0.456, 0.406])[None, :, None, None]
         vgg16_std = np.asarray([0.229, 0.224, 0.225])[None, :, None, None]
-        self.vgg16_std = torch.autograd.Variable(torch.from_numpy(vgg16_std), requires_grad=False)
-        self.vgg16_mean = torch.autograd.Variable(torch.from_numpy(vgg16_mean), requires_grad=False)
 
-        self.vgg16_std = self.vgg16_std.float().cuda()
-        self.vgg16_mean = self.vgg16_mean.float().cuda()
+        vgg16_std = torch.autograd.Variable(torch.from_numpy(vgg16_std), requires_grad=False).float().cuda()
+        vgg16_mean = torch.autograd.Variable(torch.from_numpy(vgg16_mean), requires_grad=False).float().cuda()
+
+        self.register_buffer("vgg16_mean", vgg16_mean)
+        self.register_buffer("vgg16_std", vgg16_std)
 
         self.vgg16.eval()
         self.eval()
@@ -239,4 +240,3 @@ if __name__=='__main__':
     result = loss_smooth(tensor_1, tensor_2)
     log.info(result.shape)
     result.backward()
-

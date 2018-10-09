@@ -38,9 +38,12 @@ class SSM_Main:
         if message:
             self.writer.add_text("ExptInfo", message)
         self.superslomo = SSM.full_model(self.cfg).cuda()
+        self.loss = SSMLosses.get_loss(self.cfg).cuda()
+
         if torch.cuda.device_count()>0:
             self.superslomo = torch.nn.DataParallel(self.superslomo)
         self.loss = SSMLosses.get_loss(self.cfg).cuda()
+
 
     def get_hyperparams(self):
         """
@@ -56,7 +59,7 @@ class SSM_Main:
         self.t_interp = self.cfg.getfloat("TRAIN", "T_INTERP")
         self.save_every= self.cfg.getint("TRAIN", "SAVE_EVERY")
 
-    def write_losses(self, total_loss, individual_losses, iteration, split):
+    def write_losses(self, losses, iteration, split):
         """
         Writes the losses to tensorboard for given iteration and split.
 
@@ -67,7 +70,7 @@ class SSM_Main:
         :return:
         """
 
-        loss_reconstr, loss_perceptual, loss_warp = individual_losses
+        total_loss, loss_reconstr,  loss_warp,loss_perceptual = losses
 
         self.writer.add_scalars('Total_Loss', {split: total_loss.data[0]}, iteration)
         self.writer.add_scalars('Reconstruction_Loss', {split: loss_reconstr.data[0]}, iteration)
@@ -92,7 +95,10 @@ class SSM_Main:
         results = self.superslomo(img_0, img_1, dataset_info, self.t_interp)
         loss_flag = split in ["TRAIN", "VAL"]
         if loss_flag:
-            total_loss = self.loss(*results, target_image=img_t)[0]
+
+            losses = self.loss(*results, target_image=img_t)
+            self.write_losses(losses, iteration, split)
+            total_loss = losses[0]
             return total_loss
 
     def train(self):
@@ -136,12 +142,10 @@ class SSM_Main:
                     val_batch = next(adobe_val_samples)
 
                 self.forward_pass(val_batch, val_info, "VAL", iteration)
-                delta_t = time.time() - prev_t
-                prev_t = time.time()
-                log.info(str(iteration)+" "+str(delta_t))
-                if iteration==20:
-                    break
-            break
+                if iteration<=20:
+                    delta_t = time.time() - prev_t
+                    prev_t = time.time()
+                    log.info(str(iteration)+" "+str(delta_t))
 
             if epoch%self.save_every==0:
                 if isinstance(self.superslomo, torch.nn.DataParallel):
