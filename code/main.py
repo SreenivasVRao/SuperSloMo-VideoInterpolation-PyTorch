@@ -142,10 +142,13 @@ class SSM_Main:
                     val_batch = next(adobe_val_samples)
 
                 self.forward_pass(val_batch, val_info, "VAL", iteration)
-                if iteration<=20:
-                    delta_t = time.time() - prev_t
-                    prev_t = time.time()
-                    log.info(str(iteration)+" "+str(delta_t))
+                delta_t = time.time() - prev_t
+                prev_t = time.time()
+                log.info(str(iteration)+" "+str(delta_t))
+            break
+
+            if epoch%self.lr_period==0 and epoch>0:
+                self.learning_rate = self.learning_rate*self.lr_decay
 
             if epoch%self.save_every==0:
                 if isinstance(self.superslomo, torch.nn.DataParallel):
