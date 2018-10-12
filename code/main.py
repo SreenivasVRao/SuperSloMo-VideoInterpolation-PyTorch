@@ -40,11 +40,6 @@ class SSM_Main:
         self.superslomo = SSM.full_model(self.cfg).cuda()
         self.loss = SSMLosses.get_loss(self.cfg).cuda()
 
-        if torch.cuda.device_count()>0:
-            self.superslomo = torch.nn.DataParallel(self.superslomo)
-        self.loss = SSMLosses.get_loss(self.cfg).cuda()
-
-
     def get_hyperparams(self):
         """
         Reads the config to get training hyperparameters.
@@ -72,11 +67,11 @@ class SSM_Main:
 
         total_loss, loss_reconstr,  loss_warp,loss_perceptual = losses
 
-        self.writer.add_scalars('Total_Loss', {split: total_loss.data[0]}, iteration)
-        self.writer.add_scalars('Reconstruction_Loss', {split: loss_reconstr.data[0]}, iteration)
-        self.writer.add_scalars('Perceptual_Loss', {split: loss_perceptual.data[0]}, iteration)
-        # self.writer.add_scalars('Smoothness_Loss', {split: loss_smooth.data[0]}, iteration)
-        self.writer.add_scalars('Warping_Loss', {split: loss_warp.data[0]}, iteration)
+        self.writer.add_scalars('Total_Loss', {split: total_loss.item()}, iteration)
+        self.writer.add_scalars('Reconstruction_Loss', {split: loss_reconstr.item()}, iteration)
+        self.writer.add_scalars('Perceptual_Loss', {split: loss_perceptual.item()}, iteration)
+        # self.writer.add_scalars('Smoothness_Loss', {split: loss_smooth.item()}, iteration)
+        self.writer.add_scalars('Warping_Loss', {split: loss_warp.item()}, iteration)
 
     def forward_pass(self, data_batch, dataset_info, split, iteration, get_interpolation=False):
         """
