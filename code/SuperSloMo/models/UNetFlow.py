@@ -13,50 +13,7 @@ class UNet(nn.Module):
         self.batchNorm = batch_norm
         self.verbose = verbose
         self.build_model(in_channels, out_channels)
-
-    def concat_tensors(self, tensor1, tensor2):
-        """
-        Makes tensor1 dimensions equal to tensor2.
-        :param tensor1: tensor after interpolation
-        :param tensor2: tensor from earlier layer.
-        :return: concatenation of tensor1 and tensor2 along channels
-        """
-        _, _, h1, w1 = tensor1.shape
-        _, _, h2, w2 = tensor2.shape
-
-        padding = [0, 0, 0, 0] # (left, right, top, bottom)
-        extra_padding = False
-
-        rows = abs(h2 - h1)
-        cols = abs(w2 - w1)
-
-        top = int(rows / 2)
-        bottom = rows - top
-
-        left = int(cols / 2)
-        right = cols - left
-
-        if h1 < h2:
-            padding[2] = top
-            padding[3] = bottom
-            extra_padding = True
-        elif h2 < h1:
-            tensor1 = tensor1[:, :, :-rows, :]
-
-        if w1 < w2:
-            padding[0] = left
-            padding[1] = right
-            extra_padding = True
-        elif w2 < w1:
-            tensor1 = tensor1[:, :, :, :-cols]
-
-        if extra_padding:
-            pad = nn.ZeroPad2d(padding)
-            tensor1 = pad(tensor1)
-
-        new_tensor = torch.cat([tensor1, tensor2], dim=1)
-
-        return new_tensor
+        self.squash = nn.Sigmoid()
 
     def build_model(self, in_channels, out_channels):
         """
@@ -103,57 +60,65 @@ class UNet(nn.Module):
 
         # block 7
 
-        self.upsample7 = lambda x: F.upsample(x, size=(2 * x.shape[2], 2 * x.shape[3]),
+        self.upsample7 = lambda x: F.upsample(x, scale_factor=2,
                                               mode='bilinear')  # 2 x 2 upsampling
         # 1/16
 
-        self.conv7a = conv(in_planes=1024, out_planes=512,kernel_size=3)
+        self.conv7a = conv(in_planes=512, out_planes=512,kernel_size=3)
         self.conv7b = conv(in_planes=512, out_planes=512, kernel_size=3)
 
 
         # block 8
 
-        self.upsample8 = lambda x: F.upsample(x, size=(2 * x.shape[2], 2 * x.shape[3]),
+        self.upsample8 = lambda x: F.upsample(x, scale_factor=2,
                                               mode='bilinear')  # 2 x 2 upsampling
         # 1/8
 
-        self.conv8a = conv(in_planes=768, out_planes=256, kernel_size=3)
+        self.conv8a = conv(in_planes=512, out_planes=256, kernel_size=3)
         self.conv8b = conv(in_planes=256, out_planes=256, kernel_size=3)
 
 
         # block 9
 
-        self.upsample9 = lambda x: F.upsample(x, size=(2 * x.shape[2], 2 * x.shape[3]),
+        self.upsample9 = lambda x: F.upsample(x, scale_factor=2,
                                               mode='bilinear')  # 2 x 2 upsampling
         # 1/4
 
-        self.conv9a = conv(in_planes=384, out_planes=128, kernel_size=3)
+        self.conv9a = conv(in_planes=256, out_planes=128, kernel_size=3)
         self.conv9b = conv(in_planes=128, out_planes=128, kernel_size=3)
 
         # # block 10
         #
-        self.upsample10 = lambda x: F.upsample(x, size=(2 * x.shape[2], 2 * x.shape[3]),
+        self.upsample10 = lambda x: F.upsample(x, scale_factor=2,
                                                mode='bilinear')  # 2 x 2 upsampling
         # 1/2
 
-        self.conv10a = conv(in_planes=192, out_planes=64, kernel_size=3)
+        self.conv10a = conv(in_planes=128, out_planes=64, kernel_size=3)
         self.conv10b = conv(in_planes=64, out_planes=64, kernel_size=3)
 
         # block 11
 
-        self.upsample11 = lambda x: F.upsample(x, size=(2 * x.shape[2], 2 * x.shape[3]),
+        self.upsample11 = lambda x: F.upsample(x, scale_factor=2,
                                                mode='bilinear')  # 2 x 2 upsampling
         # 1
 
-        self.conv11a = conv(in_planes=96, out_planes=32, kernel_size=3)
-        self.conv11b = conv(in_planes=32, out_planes=out_channels, kernel_size=3)
+        self.conv11a = conv(in_planes=64, out_planes=32, kernel_size=3)
+        self.conv11b = nn.Conv2d(in_channels=32, out_channels=out_channels, kernel_size=3, stride=1, padding=1, dilation=1, bias=True)
+
+
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d):
+                nn.init.kaiming_normal(m.weight.data, mode='fan_in')
+                if m.bias is not None:
+                    m.bias.data.zero_()
+
 
     def forward(self, flowI_input, t_interp):
         """
-        :param input_tensor: input: N,18, H, W,
+        :param input_tensor: input: N,16, H, W,
         batch_size = N
 
-        :return: output_tensor: N, 18, H, W, C
+        :return: output_tensor: N, 5, H, W, C
         interpolation result
 
         """
@@ -203,52 +168,42 @@ class UNet(nn.Module):
             log.info("Output Block 6: "+str(conv6b_out.shape))
 
         upsample7_out = self.upsample7(conv6b_out)
-        input_7 = self.concat_tensors(upsample7_out, conv5b_out)
-        # = torch.cat([upsample7_out, conv5b_out], dim=1)
-        conv7a_out = self.conv7a(input_7)
+        conv7a_out = self.conv7a(upsample7_out) + conv5b_out
         conv7b_out = self.conv7b(conv7a_out)
 
         if self.verbose:
             log.info("Output Block 7: "+str(conv7b_out.shape))
 
         upsample8_out = self.upsample8(conv7b_out)
-        input_8 = self.concat_tensors(upsample8_out, conv4b_out)
-        # input_8 = torch.cat([upsample8_out, conv4b_out], dim=1)
-        conv8a_out = self.conv8a(input_8)
+        conv8a_out = self.conv8a(upsample8_out) + conv4b_out
         conv8b_out = self.conv8b(conv8a_out)
 
         if self.verbose:
             log.info("Output Block 8: "+str(conv8b_out.shape))
 
         upsample9_out = self.upsample8(conv8b_out)
-        input_9 = self.concat_tensors(upsample9_out, conv3b_out)
-        # input_9 = torch.cat([upsample9_out, conv3b_out], dim=1)
-        conv9a_out = self.conv9a(input_9)
+        conv9a_out = self.conv9a(upsample9_out)  + conv3b_out
         conv9b_out = self.conv9b(conv9a_out)
 
         if self.verbose:
             log.info("Output Block 9: "+str(conv9b_out.shape))
 
         upsample10_out = self.upsample10(conv9b_out)
-        input_10 = self.concat_tensors(upsample10_out, conv2b_out)
-        # input_10 = torch.cat([upsample10_out, conv2b_out], dim=1)
-        conv10a_out = self.conv10a(input_10)
+        conv10a_out = self.conv10a(upsample10_out) + conv2b_out
         conv10b_out = self.conv10b(conv10a_out)
 
         if self.verbose:
             log.info("Output Block 10: "+str(conv10b_out.shape))
 
         upsample11_out = self.upsample11(conv10b_out)
-        input_11 = self.concat_tensors(upsample11_out, conv1b_out)
-        # input_11 = torch.cat([upsample11_out, conv1b_out], dim=1)
-        conv11a_out = self.conv11a(input_11)
+        conv11a_out = self.conv11a(upsample11_out) + conv1b_out
         conv11b_out = self.conv11b(conv11a_out)
         if self.verbose:
             log.info("Output Block 11: "+str(conv11b_out.shape))
 
         flowI_output = conv11b_out
-        interpolation_result = self.compute_output_image(flowI_input, flowI_output, t=t_interp)
-        return flowI_output, interpolation_result
+
+        return flowI_output
 
     def compute_inputs(self, img_tensor, flow_pred_tensor, t):
         """
@@ -292,19 +247,18 @@ class UNet(nn.Module):
         :return: The extract elements.
         """
 
-        img_1 = output_tensor[:, :3, ...] # Image 1
-        v_1t = output_tensor[:, 3, ...] # Visibility Map 1-> t
-        dflow_t1 = output_tensor[:, 4:6, ...] # Residual of flow t->1
-        dflow_t0 = output_tensor[:, 6:8, ...] # Residual of flow t->0
-        img_0 = output_tensor[:, 8:, ...] # Image 0
+        v_1t = output_tensor[:, 0, ...] # Visibility Map 1-> t
+        dflow_t1 = output_tensor[:, 1:3, ...] # Residual of flow t->1
+        dflow_t0 = output_tensor[:, 3:, ...] # Residual of flow t->0
 
         v_1t = v_1t[:, None, ...] # making dimensions compatible
+        v_1t = self.squash(v_1t)
 
         v_0t = 1 - v_1t # Visibility Map 0->t
 
-        return img_1, v_1t, dflow_t1, dflow_t0, v_0t, img_0
+        return v_1t, dflow_t1, dflow_t0, v_0t
 
-    def compute_output_image(self, input_tensor, output_tensor, t):
+    def compute_output_image(self,img_tensor, input_tensor, output_tensor, t):
         """
         :param input_tensor: Input to flow interpolation model.
         :param output_tensor: Prediction from flow interpolation model
@@ -315,14 +269,16 @@ class UNet(nn.Module):
         est_flow_t1 = input_tensor[:, 6:8, ...] # Estimated flow t->1
         est_flow_t0= input_tensor[:, 8:10, ...] # Estimated flow t->0
 
-        pred_img_1, pred_v_1t, pred_dflow_t1, \
-        pred_dflow_t0, pred_v_0t, pred_img_0 = self.extract_outputs(output_tensor)
+        img_0 = img_tensor[:,:3,...]
+        img_1 = img_tensor[:,3:,...]
+
+        pred_v_1t, pred_dflow_t1, pred_dflow_t0, pred_v_0t = self.extract_outputs(output_tensor)
 
         pred_flow_t1 = est_flow_t1 + pred_dflow_t1
         pred_flow_t0 = est_flow_t0 + pred_dflow_t0
 
-        pred_img_0t = warp(pred_img_0, -pred_flow_t0) # backward warping to produce img at time t
-        pred_img_1t = warp(pred_img_1, -pred_flow_t1) # backward warping to produce img at time t
+        pred_img_0t = warp(img_0, -pred_flow_t0) # backward warping to produce img at time t
+        pred_img_1t = warp(img_1, -pred_flow_t1) # backward warping to produce img at time t
 
         pred_img_0t = pred_v_0t * pred_img_0t # visibility map occlusion reasoning
         pred_img_1t = pred_v_1t * pred_img_1t # visibility map occlusion reasoning

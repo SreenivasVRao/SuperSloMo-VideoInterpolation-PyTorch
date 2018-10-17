@@ -44,11 +44,11 @@ class Reader(DataLoader):
                 nframes = int(d)
                 img_paths = data[idx + 1 : idx + 1 + nframes]
                 img_paths = self.get_required_images(img_paths)
+
                 clips.append(img_paths)
             else:
                 continue
-
-        return clips
+        return [clips[0]]
 
     def get_required_images(self, image_list):
         n_frames = len(image_list)
@@ -97,6 +97,7 @@ class Reader(DataLoader):
     def __getitem__(self, idx):
 
         img_paths = self.clips[idx]
+
         H = 720 # known size of Adobe240FPS dataset
         W = 1280 # known size of Adobe dataset.
         frames = np.zeros([len(img_paths), H, W, 3])
@@ -128,7 +129,7 @@ class ResizeCrop(object):
 
         h_start  =random.randint(0, 360-320)
 
-        new_frames = new_frames[:, h_start:h_start+320, ...]
+        new_frames = new_frames[:, h_start:h_start+320, ...]/255.0
         return new_frames
 
 class ToTensor(object):
@@ -174,17 +175,12 @@ if __name__ == '__main__':
     config.read(args.config)
     logging.info("Read config")
 
-    samples = data_generator(config, "TRAIN")
+    dataset = get_dataset(config, "TRAIN")
+    samples = generate_samples(dataset, config, "TRAIN")
     import time
     start = time.time()
 
-    for idx in range(20):
-        log.info(str(idx))
-        batch = next(samples)
-        log.info(batch.shape)
-
-    stop = time.time()
-    total = (stop - start)
-    log.info(stop-start)
-
-    log.info(str(float(total)/20.0))
+    batch = next(samples)
+    log.info(batch.shape)
+    import numpy as np
+    np.savez("batch.npz", batch)

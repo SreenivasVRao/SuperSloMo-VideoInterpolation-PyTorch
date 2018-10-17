@@ -34,14 +34,13 @@ class PerceptualLoss(nn.Module):
         for param in self.parameters():
             param.requires_grad = False
 
-        self.modulelist = list(self.vgg16.features.modules())
-        self.modulelist = self.modulelist[1:23] # until conv4_3
+        self.modulelist = list(self.vgg16.features.modules())[1:23] # until conv4_3
 
 
     def rescale(self, tensor):
         """
         :param tensor: B C H W tensor
-        :return: tensor after rescaling to [0, 1]
+        :return: tensor after rescaling to [0, 1] and normalizing by vgg mean and std
         """
         b, c, h, w = tensor.shape
         tensor = tensor.contiguous()
@@ -59,7 +58,6 @@ class PerceptualLoss(nn.Module):
     def forward(self, x_input, x_target):
         x_input = self.rescale(x_input)
         x_target = self.rescale(x_target)
-
         for aLayer in self.modulelist: # until conv4_3
             x_input = aLayer(x_input)
             x_target = aLayer(x_target)
@@ -139,6 +137,7 @@ class SSMLosses(nn.Module):
         self.warp_loss_3 = nn.L1Loss()
         self.warp_loss_4 = nn.L1Loss()
         self.loss_weights = self.read_loss_weights(cfg)
+        self.squash = nn.Sigmoid()
 
     def read_loss_weights(self, cfg):
         lambda_r = cfg.getfloat("TRAIN", "LAMBDA_R") # reconstruction loss weighting
@@ -155,17 +154,17 @@ class SSMLosses(nn.Module):
         :return: The extract elements.
         """
 
-        img_1 = output_tensor[:, :3, ...] # Image 1
-        v_1t = output_tensor[:, 3, ...] # Visibility Map 1-> t
-        dflow_t1 = output_tensor[:, 4:6, ...] # Residual of flow t->1
-        dflow_t0 = output_tensor[:, 6:8, ...] # Residual of flow t->0
-        img_0 = output_tensor[:, 8:, ...] # Image 0
+        v_1t = output_tensor[:, 0, ...] # Visibility Map 1-> t
+        dflow_t1 = output_tensor[:, 1:3, ...] # Residual of flow t->1
+        dflow_t0 = output_tensor[:, 3:, ...] # Residual of flow t->0
 
         v_1t = v_1t[:, None, ...] # making dimensions compatible
 
+        v_1t = self.squash(v_1t)
+
         v_0t = 1 - v_1t # Visibility Map 0->t
 
-        return img_1, v_1t, dflow_t1, dflow_t0, v_0t, img_0
+        return v_1t, dflow_t1, dflow_t0, v_0t
 
 
     def get_reconstruction_loss(self, interpolated_image, target_image):
@@ -176,28 +175,21 @@ class SSMLosses(nn.Module):
         flow_01 = flow_tensor[:,:2,  ...]
         flow_10 = flow_tensor[:, 2:, ...]
 
-        img_1 = img_tensor[:,:3,...]
-        img_0 = img_tensor[:,3:,...]
-
-        pred_img_10 = warp(img_1, - flow_01) # flow img 1 to img 0
-        pred_img_01 = warp(img_0, - flow_10) # flow img 0 to img 1
+        img_0 = img_tensor[:,:3,...]
+        img_1 = img_tensor[:,3:,...]
 
         flow_t1 = input_tensor[:, 6:8, ...] # Estimated flow t->1
         flow_t0= input_tensor[:, 8:10, ...] # Estimated flow t->0
 
-        pred_img_1, pred_v_1t, pred_dflow_t1, \
-        pred_dflow_t0, pred_v_0t, pred_img_0 = self.extract_outputs(output_tensor)
+        pred_v_1t, pred_dflow_t1, pred_dflow_t0, pred_v_0t  = self.extract_outputs(output_tensor)
 
         pred_flow_t1 = flow_t1 + pred_dflow_t1
         pred_flow_t0 = flow_t0 + pred_dflow_t0
 
-        pred_img_0t = warp(pred_img_0, -pred_flow_t0) # backward warping to produce img at time t
-        pred_img_1t = warp(pred_img_1, -pred_flow_t1) # backward warping to produce img at time t
+        pred_img_0t = warp(img_0, -pred_flow_t0) # backward warping to produce img at time t
+        pred_img_1t = warp(img_1, -pred_flow_t1) # backward warping to produce img at time t
 
-        loss_warp = self.warp_loss_1(pred_img_10, img_0) + \
-                    self.warp_loss_2(pred_img_01, img_1) + \
-                    self.warp_loss_3(pred_img_0t, target_image) + \
-                    self.warp_loss_4(pred_img_1t, target_image)
+        loss_warp = self.warp_loss_3(pred_img_0t, target_image) + self.warp_loss_4(pred_img_1t, target_image)
 
         return loss_warp
 
@@ -205,13 +197,13 @@ class SSMLosses(nn.Module):
         return self.perceptual_loss_fn(img, target_img)
 
     def forward(self, flowC_input, flowC_output, flowI_input, flowI_output, interpolated_image, target_image):
-        loss_reconstr = self.get_reconstruction_loss(interpolated_image, target_image)
-        loss_perceptual = self.get_perceptual_loss(interpolated_image, target_image)
-        loss_warp = self.get_warp_loss(flowC_input, flowC_output, flowI_input, flowI_output, target_image)
-
         lambda_r, lambda_p, lambda_w, lambda_s = self.loss_weights
 
-        total_loss = lambda_r * loss_reconstr + lambda_w * loss_warp + lambda_p * loss_perceptual
+        loss_reconstr = lambda_r * self.get_reconstruction_loss(interpolated_image, target_image)
+        loss_perceptual =lambda_p * self.get_perceptual_loss(interpolated_image, target_image)
+        loss_warp = lambda_w * self.get_warp_loss(flowC_input, flowC_output, flowI_input, flowI_output, target_image)
+
+        total_loss =  loss_reconstr +  loss_warp +  loss_perceptual
         loss_list = [total_loss, loss_reconstr, loss_warp, loss_perceptual]
 
         loss_tensor = torch.stack(loss_list).squeeze()

@@ -7,13 +7,19 @@ import logging
 
 log = logging.getLogger(__name__)
 
-
 class FullModel(nn.Module):
 
-    def __init__(self, cfg):
+    def __init__(self, cfg, writer):
         super(FullModel, self).__init__()
         self.cfg = cfg
         self.load_model()
+        lambda_r = self.cfg.getfloat("TRAIN", "LAMBDA_R") # reconstruction loss weighting
+        lambda_w = self.cfg.getfloat("TRAIN", "LAMBDA_W") # warp loss weighting
+        lambda_s = self.cfg.getfloat("TRAIN", "LAMBDA_S") # smoothness loss weighting
+        lambda_p = self.cfg.getfloat("TRAIN", "LAMBDA_P") # perceptual loss weighting
+        self.loss_weights = lambda_r, lambda_p, lambda_w, lambda_s
+        self.writer = writer
+        self.iternum = 0
 
     def load_model(self):
         """
@@ -37,7 +43,7 @@ class FullModel(nn.Module):
                                                    in_channels=6, out_channels=4)
         # Flow Computation Model
         self.stage2_model = UNetFlow.get_model(stage2_weights, in_channels=16,
-                                               out_channels=11)  # Flow Interpolation Model
+                                               out_channels=5)  # Flow Interpolation Model
 
         if self.cfg.getboolean("STAGE1", "FREEZE"):
             log.info("Freezing stage1 model.")
@@ -61,8 +67,6 @@ class FullModel(nn.Module):
         :param img0, img1: torch tensor BGR (0, 255.0)
         :return: output from flowC model, multiplied by 20
         """
-        img0 = (1.0 * img0) / 255.0
-        img1 = (1.0 * img1) / 255.0
 
         input_pair_01 = torch.cat([img0, img1], dim=1)
         input_pair_10 = torch.cat([img1, img0], dim=1)
@@ -99,13 +103,13 @@ class FullModel(nn.Module):
 
         img_tensor, flow_tensor = self.stage1_computations(image_0, image_1, dataset_info)
         flowI_input = self.stage2_model.compute_inputs(img_tensor, flow_tensor, t=t_interp)
-        flowI_output, interpolation_result = self.stage2_model(flowI_input, t_interp)
-
+        flowI_output = self.stage2_model(flowI_input, t_interp)
+        interpolation_result = self.stage2_model.compute_output_image(img_tensor, flowI_input, flowI_output, t=t_interp)
         return img_tensor, flow_tensor, flowI_input, flowI_output, interpolation_result
 
 
-def full_model(config):
-    model = FullModel(config)
+def full_model(config, writer):
+    model = FullModel(config, writer)
     return model
 
 

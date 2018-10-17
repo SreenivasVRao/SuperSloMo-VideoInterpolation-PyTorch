@@ -35,9 +35,13 @@ class SSM_Main:
         os.makedirs(os.path.join(log_dir, self.expt_name, "plots"))
 
         self.writer = SummaryWriter(os.path.join(log_dir, self.expt_name, "plots"))
-        if message:
-            self.writer.add_text("ExptInfo", message)
-        self.superslomo = SSM.full_model(self.cfg).cuda()
+        self.get_hyperparams()
+
+        self.superslomo = SSM.full_model(self.cfg, self.writer).cuda()
+        if torch.cuda.device_count()>1:
+            self.superslomo = torch.nn.DataParallel(self.superslomo)
+        else:
+            log.warning("GPUs found: "+str(torch.cuda.device_count()))
         self.loss = SSMLosses.get_loss(self.cfg).cuda()
 
     def get_hyperparams(self):
@@ -85,12 +89,11 @@ class SSM_Main:
         data_batch = data_batch.cuda().float()
         img_0 = data_batch[:, 0, ...]
         img_t = data_batch[:, 1, ...]
-        img_1 = data_batch[:,-1, ...]
+        img_1 = data_batch[:, 2, ...]
 
         results = self.superslomo(img_0, img_1, dataset_info, self.t_interp)
         loss_flag = split in ["TRAIN", "VAL"]
         if loss_flag:
-
             losses = self.loss(*results, target_image=img_t)
             self.write_losses(losses, iteration, split)
             total_loss = losses[0]
@@ -102,13 +105,9 @@ class SSM_Main:
 
         :return:
         """
-
-        optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.superslomo.parameters()),
-                                     lr=self.learning_rate)
-        lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=self.lr_period,gamma=self.lr_decay)
+        optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.superslomo.parameters()),  lr=self.learning_rate)
+        lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=self.lr_period, gamma=self.lr_decay)
         iteration = 0
-
-        prev_t = time.time()
 
         for epoch in range(self.n_epochs):
             # shuffles the data on each epoch
@@ -120,15 +119,16 @@ class SSM_Main:
 
             log.info("Epoch: "+str(epoch)+" Iteration: "+str(iteration))
 
+            lr_scheduler.step()
+
             for train_batch in adobe_train_samples:
                 iteration +=1
 
                 train_loss = self.forward_pass(train_batch, train_info, "TRAIN", iteration)
 
-
                 optimizer.zero_grad()
                 train_loss.backward()
-                lr_scheduler.step()
+                optimizer.step()
 
                 try:
                     val_batch = next(adobe_val_samples)
@@ -137,13 +137,7 @@ class SSM_Main:
                     val_batch = next(adobe_val_samples)
 
                 self.forward_pass(val_batch, val_info, "VAL", iteration)
-                delta_t = time.time() - prev_t
-                prev_t = time.time()
-                log.info(str(iteration)+" "+str(delta_t))
-            break
-
-            if epoch%self.lr_period==0 and epoch>0:
-                self.learning_rate = self.learning_rate*self.lr_decay
+            continue
 
             if epoch%self.save_every==0:
                 if isinstance(self.superslomo, torch.nn.DataParallel):
