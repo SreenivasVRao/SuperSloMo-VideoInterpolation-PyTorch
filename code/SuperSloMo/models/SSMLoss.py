@@ -36,7 +36,6 @@ class PerceptualLoss(nn.Module):
 
         self.modulelist = list(self.vgg16.features.modules())[1:23] # until conv4_3
 
-
     def rescale(self, tensor):
         """
         :param tensor: B C H W tensor
@@ -165,7 +164,6 @@ class SSMLosses(nn.Module):
         v_0t = 1 - v_1t # Visibility Map 0->t
 
         return v_1t, dflow_t1, dflow_t0, v_0t
-
 
     def get_reconstruction_loss(self, interpolated_image, target_image):
         return self.reconstr_loss_fn(interpolated_image, target_image)
