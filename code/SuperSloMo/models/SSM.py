@@ -85,6 +85,12 @@ class FullModel(nn.Module):
         return img_tensor, flow_tensor
 
     def post_process_flow(self, flow_tensor, dataset_info):
+        """
+        Refer to PWC Net repo for details.
+        :param flow_tensor:
+        :param dataset_info:
+        :return:
+        """
         dims, scale_factors = dataset_info
         flow_tensor = flow_tensor * 20.0
         H, W = dims
@@ -94,7 +100,7 @@ class FullModel(nn.Module):
         upsampled_flow[:, 0::2, ...] = upsampled_flow[:, 0::2, ...] * s_W
         # u vectors
 
-        upsampled_flow[:, 1::3, ...] = upsampled_flow[:, 1::3, ...] * s_H
+        upsampled_flow[:, 1::2, ...] = upsampled_flow[:, 1::2, ...] * s_H
         # v vectors
 
         return upsampled_flow
