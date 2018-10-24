@@ -1,7 +1,7 @@
 import glob, logging
 import cv2
 import numpy as np
-import random, os
+import os
 from math import ceil
 import math
 import torch
@@ -43,12 +43,10 @@ class Reader(DataLoader):
             if len(d)<=2:
                 nframes = int(d)
                 img_paths = data[idx + 1 : idx + 1 + nframes]
-                img_paths = self.get_required_images(img_paths)
-
                 clips.append(img_paths)
             else:
                 continue
-        return [clips[0]]
+        return clips
 
     def get_required_images(self, image_list):
         n_frames = len(image_list)
@@ -57,14 +55,14 @@ class Reader(DataLoader):
             pass
 
         elif n_frames < 12:
-            start_idx = random.randint(0, n_frames - 9) # random starting point to get 9 frames.
+            start_idx = np.random.randint(0, n_frames - 9+1) # random starting point to get 9 frames.
             image_list = image_list[start_idx: start_idx + 9]
 
         elif n_frames >= 12:
-            subset = random.randint(0, n_frames-12) # random starting point to get subset of 12 frames.
+            subset = np.random.randint(0, n_frames-12+1) # random starting point to get subset of 12 frames.
             image_list = image_list[subset:subset+12]
 
-            start_idx = random.randint(0, 3) # random starting point to get subset of 9 frames.
+            start_idx = np.random.randint(0, 3+1) # random starting point to get subset of 9 frames.
             image_list = image_list[start_idx:start_idx+9]
 
         assert len(image_list)==9 and 0<self.t_index < 9, "Something went wrong."
@@ -97,19 +95,20 @@ class Reader(DataLoader):
     def __getitem__(self, idx):
 
         img_paths = self.clips[idx]
+        img_paths = self.get_required_images(img_paths)
+        img = cv2.imread(img_paths[0])
+        h, w, c = img.shape
+        frames = np.zeros([len(img_paths), h, w, c])  # images are sometimes flipped for vertical videos.
 
-        H = 720 # known size of Adobe240FPS dataset
-        W = 1280 # known size of Adobe dataset.
-        frames = np.zeros([len(img_paths), H, W, 3])
         for idx, fpath in enumerate(img_paths):
             img = cv2.imread(fpath)
-            h, w, c = img.shape
-            if (h,w) == (720, 1280):
-                frames[idx,...] = img
-            elif (h,w) == (1280, 720):
-                frames[idx, ...] = img.swapaxes(0, 1) # flipping the image for vertical videos
-            else:
-                log.info(str(img.shape) + " "+fpath)
+            frames[idx,...] = img
+
+        if h==1280 and w==720: # vertical video. W = 720, H =1280
+            frames = frames.swapaxes(1, 2)
+
+        if np.random.randint(0, 2)==1:
+            frames = frames[:,:,::-1,:] # horizontal flip 50% of the time
 
         if self.transform:
             frames = self.transform(frames)
@@ -123,30 +122,38 @@ class ResizeCrop(object):
 
     def __call__(self, sample_frames):
 
+        _, h, w, c = sample_frames.shape
+        assert h==720 and w==1280, "invalid dimensions"
+
         new_frames = np.zeros((sample_frames.shape[0], 360, 640, 3))
+
         for idx in range(sample_frames.shape[0]):
             new_frames[idx, ...] = cv2.resize(sample_frames[idx, ...], (640, 360))
+        h_start  =np.random.randint(0, 360-320+1)
+        new_frames = new_frames[:, h_start:h_start+320, ...]
 
-        h_start  =random.randint(0, 360-320)
-
-        new_frames = new_frames[:, h_start:h_start+320, ...]/255.0
         return new_frames
 
 class ToTensor(object):
-
+    """
+    Converts np 0-255 uint8 to 0 -1 tensor
+    """
     def __call__(self, sample):
-        sample = torch.from_numpy(sample)
+        sample = torch.from_numpy(sample)/255.0
         sample = sample.permute(0, 3, 1, 2) # n_frames, H W C -> n_frames, C, H, W
         return sample
 
 
+
 def data_generator(config, split):
     transformations = transforms.Compose([ResizeCrop(), ToTensor()])
+
     batch_size = config.getint(split, "BATCH_SIZE")
     n_workers = config.getint("MISC", "N_WORKERS")
 
     dataset = Reader(config, split, transform=transformations)
-    adobe_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=n_workers)
+    adobe_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=n_workers,
+                              worker_init_fn=lambda _: np.random.seed(int(torch.initial_seed()%(2**32 -1))))
 
     for batch_sample in adobe_loader:
         yield batch_sample
@@ -175,12 +182,11 @@ if __name__ == '__main__':
     config.read(args.config)
     logging.info("Read config")
 
-    dataset = get_dataset(config, "TRAIN")
-    samples = generate_samples(dataset, config, "TRAIN")
+    samples = data_generator(config, "TRAIN")
     import time
     start = time.time()
-
-    batch = next(samples)
-    log.info(batch.shape)
-    import numpy as np
-    np.savez("batch.npz", batch)
+    log.info(next(samples).shape)
+    for aBatch in samples:
+        pass
+    stop = time.time()
+    log.info(stop-start)

@@ -103,7 +103,8 @@ class UNet(nn.Module):
         # 1
 
         self.conv11a = conv(in_planes=64, out_planes=32, kernel_size=3)
-        self.conv11b = nn.Conv2d(in_channels=32, out_channels=out_channels, kernel_size=3, stride=1, padding=1, dilation=1, bias=True)
+        self.conv11b = nn.Sequential(nn.ReplicationPad2d(1),
+                                       nn.Conv2d(in_channels=32, out_channels=out_channels, kernel_size=3, stride=1, padding=0, dilation=1, bias=True))
 
 
         for m in self.modules():
@@ -113,7 +114,7 @@ class UNet(nn.Module):
                     m.bias.data.zero_()
 
 
-    def forward(self, flowI_input, t_interp):
+    def forward(self, flowI_input):
         """
         :param input_tensor: input: N,16, H, W,
         batch_size = N
@@ -296,13 +297,18 @@ def get_model(path, in_channels, out_channels, verbose=False):
     model = UNet(in_channels, out_channels, verbose=verbose)
     if path is not None:
         data = torch.load(path)
-        if 'stage2_state_dict' in data.keys():
+        if 'stage1_state_dict' in data.keys() and out_channels==4:
+            log.info("Loading Stage 1 UNet.")
+            model.load_state_dict(data['stage1_state_dict'])
+            log.info("Loaded weights for Flow Computation: "+str(path))
+        elif 'stage2_state_dict' in data.keys() and out_channels==5:
+            log.info("Loading Stage 2 UNet.")
             model.load_state_dict(data['stage2_state_dict'])
+            log.info("Loaded weights for Flow Interpolation: "+str(path))
         else:
             model.load_state_dict(data)
-        log.info("Loaded weights for Flow Interpolator: "+str(path))
     else:
-        log.info("Not loading weights for Flow Interpolator.")
+        log.info("Not loading weights for UNET.")
     return model
 
 

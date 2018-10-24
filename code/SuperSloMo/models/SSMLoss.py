@@ -21,6 +21,7 @@ class PerceptualLoss(nn.Module):
         vgg16_std = np.asarray([0.229, 0.224, 0.225])[None, :, None, None]
 
         vgg16_std = torch.autograd.Variable(torch.from_numpy(vgg16_std), requires_grad=False).float().cuda()
+
         vgg16_mean = torch.autograd.Variable(torch.from_numpy(vgg16_mean), requires_grad=False).float().cuda()
 
         self.register_buffer("vgg16_mean", vgg16_mean)
@@ -33,7 +34,6 @@ class PerceptualLoss(nn.Module):
             param.requires_grad = False
         for param in self.parameters():
             param.requires_grad = False
-
         self.modulelist = list(self.vgg16.features.modules())[1:23] # until conv4_3
 
     def rescale(self, tensor):
@@ -127,10 +127,11 @@ class SSMLosses(nn.Module):
         super(SSMLosses, self).__init__()
 
         self.reconstr_loss_fn = nn.L1Loss()
+
         self.perceptual_loss_fn = PerceptualLoss()
         self.smooth_loss_1 = SmoothnessLoss()
         self.smooth_loss_2 = SmoothnessLoss()
-
+        self.cfg = cfg
         self.warp_loss_1 = nn.L1Loss()
         self.warp_loss_2 = nn.L1Loss()
         self.warp_loss_3 = nn.L1Loss()
@@ -187,7 +188,13 @@ class SSMLosses(nn.Module):
         pred_img_0t = warp(img_0, -pred_flow_t0) # backward warping to produce img at time t
         pred_img_1t = warp(img_1, -pred_flow_t1) # backward warping to produce img at time t
 
-        loss_warp = self.warp_loss_3(pred_img_0t, target_image) + self.warp_loss_4(pred_img_1t, target_image)
+        loss_warp = 0
+
+        if not self.cfg.getboolean("STAGE1","FREEZE"):
+            loss_warp += self.warp_loss_1(warp(img_1, -flow_01), img_0) + self.warp_loss_2(warp(img_0, -flow_10), img_1)
+
+        if not self.cfg.getboolean("STAGE2", "FREEZE"):
+            loss_warp += self.warp_loss_3(pred_img_0t, target_image) + self.warp_loss_4(pred_img_1t, target_image)
 
         return loss_warp
 
@@ -197,9 +204,9 @@ class SSMLosses(nn.Module):
     def forward(self, flowC_input, flowC_output, flowI_input, flowI_output, interpolated_image, target_image):
         lambda_r, lambda_p, lambda_w, lambda_s = self.loss_weights
 
-        loss_reconstr = lambda_r * self.get_reconstruction_loss(interpolated_image, target_image)
-        loss_perceptual =lambda_p * self.get_perceptual_loss(interpolated_image, target_image)
-        loss_warp = lambda_w * self.get_warp_loss(flowC_input, flowC_output, flowI_input, flowI_output, target_image)
+        loss_reconstr = lambda_r * self.get_reconstruction_loss(interpolated_image, target_image)*255.0
+        loss_perceptual =lambda_p * self.get_perceptual_loss(interpolated_image*255.0, target_image*255.0)
+        loss_warp = lambda_w * self.get_warp_loss(flowC_input, flowC_output, flowI_input, flowI_output, target_image)*255.0
 
         total_loss =  loss_reconstr +  loss_warp +  loss_perceptual
         loss_list = [total_loss, loss_reconstr, loss_warp, loss_perceptual]

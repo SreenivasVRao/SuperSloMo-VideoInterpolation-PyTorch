@@ -1,5 +1,6 @@
 import PWCNet
 import UNetFlow
+import SSMLoss
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
@@ -12,14 +13,10 @@ class FullModel(nn.Module):
     def __init__(self, cfg, writer):
         super(FullModel, self).__init__()
         self.cfg = cfg
-        self.load_model()
-        lambda_r = self.cfg.getfloat("TRAIN", "LAMBDA_R") # reconstruction loss weighting
-        lambda_w = self.cfg.getfloat("TRAIN", "LAMBDA_W") # warp loss weighting
-        lambda_s = self.cfg.getfloat("TRAIN", "LAMBDA_S") # smoothness loss weighting
-        lambda_p = self.cfg.getfloat("TRAIN", "LAMBDA_P") # perceptual loss weighting
-        self.loss_weights = lambda_r, lambda_p, lambda_w, lambda_s
         self.writer = writer
         self.iternum = 0
+        self.load_model()
+        self.loss = SSMLoss.get_loss(cfg)
 
     def load_model(self):
         """
@@ -70,17 +67,19 @@ class FullModel(nn.Module):
 
         input_pair_01 = torch.cat([img0, img1], dim=1)
         input_pair_10 = torch.cat([img1, img0], dim=1)
-
-        est_flow_01 = self.stage1_model(input_pair_01)
-        est_flow_10 = self.stage1_model(input_pair_10)
-
         img_tensor = input_pair_01
-        flow_tensor = torch.cat([est_flow_01, est_flow_10], dim=1)
 
         if self.cfg.get("STAGE1","MODEL")=="PWC":
+
+            est_flow_01 = self.stage1_model(input_pair_01)
+            est_flow_10 = self.stage1_model(input_pair_10)
+
+            flow_tensor = torch.cat([est_flow_01, est_flow_10], dim=1)
+
             flow_tensor = self.post_process_flow(flow_tensor, dataset_info)
-        else:
-            pass
+
+        elif self.cfg.get("STAGE1", "MODEL")=="UNET":
+            flow_tensor = self.stage1_model(input_pair_01)
 
         return img_tensor, flow_tensor
 
@@ -105,14 +104,22 @@ class FullModel(nn.Module):
 
         return upsampled_flow
 
-    def forward(self, image_0, image_1, dataset_info, t_interp):
+    def forward(self, image_0, image_1, dataset_info, t_interp, target_image=None, output_buffer=None, split=None, iteration=None):
 
         img_tensor, flow_tensor = self.stage1_computations(image_0, image_1, dataset_info)
         flowI_input = self.stage2_model.compute_inputs(img_tensor, flow_tensor, t=t_interp)
-        flowI_output = self.stage2_model(flowI_input, t_interp)
+        flowI_output = self.stage2_model(flowI_input)
         interpolation_result = self.stage2_model.compute_output_image(img_tensor, flowI_input, flowI_output, t=t_interp)
-        return img_tensor, flow_tensor, flowI_input, flowI_output, interpolation_result
+        if iteration % 50 == 0:
+            self.writer.add_image(split, interpolation_result[0, [2,1,0], ...], iteration)
+        if output_buffer is not None:
+            losses = self.loss(img_tensor, flow_tensor, flowI_input, flowI_output, interpolation_result, target_image)
+            output_buffer[0, :] += losses
+            output_buffer
 
+            return output_buffer
+        else:
+            return interpolation_result
 
 def full_model(config, writer):
     model = FullModel(config, writer)
