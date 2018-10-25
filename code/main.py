@@ -160,7 +160,7 @@ class SSM_Main:
 
         self.writer.close()
 
-    def compute_metrics(self, dataset, info):
+    def compute_metrics(self, dataset, info, split):
         """
         Computes PSNR, Interpolation Error, and SSIM scores for the given split of the dataset.
         :param dataset:
@@ -172,7 +172,7 @@ class SSM_Main:
 
         nframes = 0
         for iteration, a_batch in enumerate(dataset):
-            est_image_t, gt_image_t = self.forward_pass(a_batch, info, "TRAIN", iteration, get_interpolation=True)
+            est_image_t, gt_image_t = self.forward_pass(a_batch, info, split, iteration, get_interpolation=True)
             est_image_t = est_image_t * 255.0
             gt_image_t  = gt_image_t * 255.0
 
@@ -233,21 +233,21 @@ if __name__ == '__main__':
     model = SSM_Main(cfg, args.expt, args.msg)
 
 
-    model.train()
+    # model.train()
 
-    # model.superslomo.eval()
+    model.superslomo.eval()
 
-    # adobe_train = adobe_240fps.data_generator(cfg, split="TRAIN")
-    # adobe_val = adobe_240fps.data_generator(cfg, split="VAL")
-    # train_info = adobe_240fps.get_data_info(cfg, split="TRAIN")
-    # val_info = adobe_240fps.get_data_info(cfg, split="VAL")
+    adobe_train = adobe_240fps.data_generator(cfg, split="TRAIN")
+    adobe_val = adobe_240fps.data_generator(cfg, split="VAL")
+    train_info = adobe_240fps.get_data_info(cfg, split="TRAIN")
+    val_info = adobe_240fps.get_data_info(cfg, split="VAL")
 
 
-    # PSNR, IE, SSIM = model.compute_metrics(adobe_train, train_info)
-    # logging.info("ADOBE TRAIN: Average PSNR %s IE %s SSIM %s"%(PSNR, IE, SSIM))
+    PSNR, IE, SSIM = model.compute_metrics(adobe_train, train_info, "TRAIN")
+    logging.info("ADOBE TRAIN: Average PSNR %.3f IE %.3f SSIM %.3f"%(PSNR, IE, SSIM))
 
-    # PSNR, IE, SSIM = model.compute_metrics(adobe_val, val_info)
-    # logging.info("ADOBE VAL: Average PSNR %s IE %s SSIM %s"%(PSNR, IE, SSIM))
+    PSNR, IE, SSIM = model.compute_metrics(adobe_val, val_info, "VAL")
+    logging.info("ADOBE VAL: Average PSNR %.3f IE %.3f SSIM %.3f"%(PSNR, IE, SSIM))
 
     # PSNR, IE, SSIM = model.compute_metrics(adobe_test)
     # logging.info("ADOBE TEST: PSNR ", PSNR, " IE: ", IE, " SSIM: ", SSIM)

@@ -128,39 +128,79 @@ def full_model(config, writer):
 
 if __name__ == '__main__':
 
-    from code.SuperSloMo.utils import adobe_240fps
+    import ConfigParser, cv2, os, glob, logging
+    from argparse import ArgumentParser
+    from tensorboardX import SummaryWriter
     from torch.autograd import Variable
-    import ConfigParser, os
+    import torch, numpy as np
     config = ConfigParser.RawConfigParser()
-    config.read("../../config.ini")
+    parser = ArgumentParser()
 
-    stage1_weights = os.path.join(config.get("PROJECT", "DIR"), config.get("STAGE1", "WEIGHTS"))
-    model = full_model(config)
-    print(type(model))
-    print isinstance(model, nn.DataParallel)
-    print isinstance(model, nn.Module)
+    parser.add_argument("-c", "--config", required=True,
+                        default="config.ini",
+                        help="Path to config.ini file.")
+    parser.add_argument("--expt", required=True,
+                        help="Experiment Name.")
 
-    model = nn.DataParallel(model)
-    print(type(model))
-    print isinstance(model, nn.Module)
-    print isinstance(model, nn.DataParallel)
-    exit(0)
+    parser.add_argument("--log", required=True, help="Path to logfile.")
 
-    adobe_dataset = adobe_240fps.Reader(config, split="TRAIN")
+    args = parser.parse_args()
+    logging.basicConfig(filename=args.log, level=logging.INFO)
+    config.read(args.config)
 
-    aClip = next(adobe_dataset.get_clips())
+    log_dir = os.path.join(config.get("PROJECT","DIR"), "logs")
 
-    oneBatch = Variable(torch.from_numpy(aClip)).cuda().float()
+    os.makedirs(os.path.join(log_dir, args.expt, "plots"))
+    os.makedirs(os.path.join(log_dir, args.expt, "images"))
 
-    oneBatch = oneBatch.permute(0, 3, 1, 2)
-    image_0 = oneBatch[::3, ...].float()
-    image_t = oneBatch[1::3, ...].float()
-    image_1 = oneBatch[2::3, ...].float()
+    writer = SummaryWriter(os.path.join(log_dir, args.expt, "plots"))
 
-    stage1_weights = os.path.join(config.get("PROJECT", "DIR"), config.get("STAGE1", "WEIGHTS"))
-    superslomo = FullModel(stage1_weights)
-    superslomo.cuda()
-    superslomo.train(False)
-    interpolated_image = superslomo(image_0, image_1, adobe_dataset, config.getfloat("TRAIN", "T_INTERP"))
+    ssm_net = full_model(config, writer) # get the SSM Network.
+    ssm_net.cuda()
+    ssm_net.eval()
 
-    log.info(str(interpolated_image.shape))
+    fpath = "/mnt/nfs/work1/elm/hzjiang/Data/VideoInterpolation/YouTube240fps/Clips/clip_00072/"
+    images_list = glob.glob(os.path.join(fpath, "*.png"))
+    images_list.sort()
+    images_list = images_list[::8] # get 30 fps version.
+
+    k = 0
+
+    info=(320,640),(1.0, 1.0)
+
+    def get_image(path, flipFlag):
+        img = cv2.imread(path)
+        img = img/255.0
+        if flipFlag:
+            img = img.swapaxes(0, 1)
+        # img = cv2.resize(img, (640, 360))
+        img = Variable(torch.from_numpy(img))
+        img = img.cuda().float()
+        img = img[None, ...]
+        img = img.permute(0, 3, 1, 2) # bhwc => bchw
+        return img
+
+
+    img_0 = cv2.imread(images_list[0])
+    h,w,c = img_0.shape
+    vFlag = h>w # horizontal video => h<=w vertical video => w< h
+    # h_start = np.random.randint(0, 360-320+1)
+
+    h_start = np.random.randint(0, 1080-1024+1)
+
+    img_dir = os.path.join(log_dir, args.expt, "images")
+    log.info("h w %s %s"%(h,w))
+    logging.info("H start: %s"%h_start)
+    logging.info("Interpolation beginning.")
+
+    for iteration, im_pair in enumerate(zip(images_list[0:-1], images_list[1:])):
+        impath0, impath1= im_pair
+        log.info(iteration)
+        img_0 = get_image(impath0, vFlag)[:, :,  h_start:h_start+1024, :]
+        img_1 = get_image(impath1, vFlag)[:, :,  h_start:h_start+1024, :]
+        interpolation_result  = ssm_net(img_0, img_1, info, 0.5, "VAL", iteration=iteration)
+        est_image_t = interpolation_result * 255.0
+        est_image_t = est_image_t.permute(0,2, 3, 1)[0, ...]
+        est_image_t = est_image_t.cpu().data.numpy()
+        cv2.imwrite(img_dir+"/Interpolated_"+str(iteration).zfill(3)+".png", est_image_t)
+    logging.info("Interpolation complete.")
