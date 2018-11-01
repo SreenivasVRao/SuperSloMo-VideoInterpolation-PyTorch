@@ -34,7 +34,7 @@ class PerceptualLoss(nn.Module):
             param.requires_grad = False
         for param in self.parameters():
             param.requires_grad = False
-        self.modulelist = list(self.vgg16.features.modules())[1:23] # until conv4_3
+        self.modulelist = list(self.vgg16.features.modules())[1:24] # until relu(conv4_3)
 
     def rescale(self, tensor):
         """
@@ -55,12 +55,11 @@ class PerceptualLoss(nn.Module):
         return tensor_normed
 
     def forward(self, x_input, x_target):
-        x_input = self.rescale(x_input)
-        x_target = self.rescale(x_target)
+        # x_input = self.rescale(x_input)
+        # x_target = self.rescale(x_target)
         for aLayer in self.modulelist: # until conv4_3
             x_input = aLayer(x_input)
             x_target = aLayer(x_target)
-
         perceptual_loss = self.l2_loss(x_input, x_target)
 
         return perceptual_loss
@@ -208,7 +207,15 @@ class SSMLosses(nn.Module):
         loss_perceptual =lambda_p * self.get_perceptual_loss(interpolated_image*255.0, target_image*255.0)
         loss_warp = lambda_w * self.get_warp_loss(flowC_input, flowC_output, flowI_input, flowI_output, target_image)*255.0
 
+        batch_size = flowC_input.shape[0]
+
         total_loss =  loss_reconstr +  loss_warp +  loss_perceptual
+        total_loss = total_loss/4.0
+        
+        """
+        Loss is averaged on each GPU. So combining across 4 GPUs, we need to average it.
+        """
+        
         loss_list = [total_loss, loss_reconstr, loss_warp, loss_perceptual]
 
         loss_tensor = torch.stack(loss_list).squeeze()

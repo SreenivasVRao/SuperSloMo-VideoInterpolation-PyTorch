@@ -8,6 +8,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 
+
 log = logging.getLogger(__name__)
 
 
@@ -33,7 +34,7 @@ class Reader(DataLoader):
         with open(fpath, "rb") as f:
             data = f.readlines()
             data = [d.strip() for d in data]
-
+            
         clips = []
 
         data = [d.replace("/home/", "/mnt/nfs/work1/elm/") for d in data]
@@ -70,8 +71,6 @@ class Reader(DataLoader):
 
         return image_list
 
-
-
     def compute_scale_factors(self):
 
         self.H = self.cfg.getint("ADOBE_DATA", "H")
@@ -107,13 +106,44 @@ class Reader(DataLoader):
         if h==1280 and w==720: # vertical video. W = 720, H =1280
             frames = frames.swapaxes(1, 2)
 
-        if np.random.randint(0, 2)==1:
-            frames = frames[:,:,::-1,:] # horizontal flip 50% of the time
+        if self.split=="TRAIN":
+            frames = self.augment_data(frames)
 
         if self.transform:
             frames = self.transform(frames)
 
         return frames
+
+    def augment_data(self, frames):
+        """
+        Flips the images horizontally 50% of the time.
+        Performs a random affine transform of the data.
+        """
+        if np.random.randint(0, 2)==1:
+            frames = frames[:,:,::-1,:] # horizontal flip 50% of the time
+
+        tx = np.random.randint(-25, 25)
+        ty = np.random.randint(-25, 25)
+        theta = np.random.uniform(-np.pi/30, np.pi/30)
+
+        N, H, W, C = frames.shape
+
+        M  = np.array([[1, 0, 0], [0, 1, 0]]).astype(np.float32)
+
+        M[0, 2] = tx
+        M[1, 2] = ty
+        M[0, 0] = M[1, 1] = np.cos(theta)
+        M[0, 1] = np.sin(theta)
+        M[1, 0] = -np.sin(theta)
+
+        for idx in range(N):
+            img = frames[idx,...]
+            frames[idx,...] = cv2.warpAffine(img, M, (W, H))
+
+        return frames
+    
+
+        
 
 class ResizeCrop(object):
     """
@@ -139,7 +169,7 @@ class ToTensor(object):
     Converts np 0-255 uint8 to 0 -1 tensor
     """
     def __call__(self, sample):
-        sample = torch.from_numpy(sample)/255.0
+        sample = torch.from_numpy(sample.copy())/255.0
         sample = sample.permute(0, 3, 1, 2) # n_frames, H W C -> n_frames, C, H, W
         return sample
 

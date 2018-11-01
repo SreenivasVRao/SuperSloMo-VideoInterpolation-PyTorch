@@ -68,8 +68,6 @@ class SSM_Main:
         :param split: Train/Val,
         :return:
         """
-
-
         total_loss, loss_reconstr,  loss_warp,loss_perceptual = losses
 
         self.writer.add_scalars('Total_Loss', {split: total_loss.item()}, iteration)
@@ -87,14 +85,14 @@ class SSM_Main:
         :return: if get_interpolation is set, returns interpolation result as BCHW Variable.
         otherwise returns the losses.
         """
+        
         data_batch = data_batch.cuda().float()
         img_0 = data_batch[:, 0, ...]
         img_t = data_batch[:, 1, ...]
-        img_1 = data_batch[:, 2, ...]
+        img_1 = data_batch[:, -1, ...]
 
         if not get_interpolation:
             loss_buffer = torch.autograd.Variable(torch.from_numpy(np.zeros([1, 4]))).float().cuda(1)
-
             losses = self.superslomo(img_0, img_1, dataset_info, self.t_interp, img_t, loss_buffer, split, iteration)[0,:]
             self.write_losses(losses, iteration, split)
             total_loss = losses[0]
@@ -124,7 +122,6 @@ class SSM_Main:
 
             for train_batch in adobe_train_samples:
                 iteration +=1
-
                 train_loss = self.forward_pass(train_batch, train_info, "TRAIN", iteration)
 
                 optimizer.zero_grad()
@@ -171,27 +168,30 @@ class SSM_Main:
         total_PSNR = 0
 
         nframes = 0
+
         for iteration, a_batch in enumerate(dataset):
-            est_image_t, gt_image_t = self.forward_pass(a_batch, info, split, iteration, get_interpolation=True)
-            est_image_t = est_image_t * 255.0
-            gt_image_t  = gt_image_t * 255.0
+            a_batch = a_batch.cuda().float()
+            for idx in range(1, 8):
+                t_interp = float(idx)/8
+                est_image_t, _  = self.forward_pass(a_batch, info, split, iteration, t_interp, get_interpolation=True)
+                gt_image_t = a_batch[:, idx, ...]
+                est_image_t = est_image_t * 255.0
+                gt_image_t  = gt_image_t * 255.0
 
-            est_image_t = est_image_t.permute(0, 2, 3, 1) # BCHW -> BHWC
-            gt_image_t  = gt_image_t.permute(0, 2, 3, 1) # BCHW -> BHWC
+                est_image_t = est_image_t.permute(0, 2, 3, 1) # BCHW -> BHWC
+                gt_image_t  = gt_image_t.permute(0, 2, 3, 1) # BCHW -> BHWC
 
-            est_image_t = est_image_t.cpu().data.numpy()
-            gt_image_t  =  gt_image_t.cpu().data.numpy()
+                est_image_t = est_image_t.cpu().data.numpy()
+                gt_image_t  =  gt_image_t.cpu().data.numpy()
 
-            est_image_t = est_image_t.astype(np.uint8)
-            gt_image_t  =  gt_image_t.astype(np.uint8)
-
-            IE_scores = metrics.interpolation_error(est_image_t, gt_image_t)
-            ssim_scores = metrics.ssim(est_image_t, gt_image_t)
-            psnr_scores = metrics.psnr(est_image_t, gt_image_t)
-
-            total_IE   += np.sum(IE_scores)
-            total_ssim += np.sum(ssim_scores)
-            total_PSNR += np.sum(psnr_scores)
+                est_image_t = est_image_t.astype(np.uint8)
+                gt_image_t  =  gt_image_t.astype(np.uint8)
+                IE_scores = metrics.interpolation_error(est_image_t, gt_image_t)
+                ssim_scores = metrics.ssim(est_image_t, gt_image_t)
+                psnr_scores = metrics.psnr(est_image_t, gt_image_t)
+                total_IE   += np.sum(IE_scores)
+                total_ssim += np.sum(ssim_scores)
+                total_PSNR += np.sum(psnr_scores)
             n_interpolations = a_batch.shape[1]-2 # exclude i_0, i_1
             nframes += a_batch.shape[0]*n_interpolations  # interpolates nframes Batch size - 2 frames (i0, i1)
 
@@ -233,21 +233,21 @@ if __name__ == '__main__':
     model = SSM_Main(cfg, args.expt, args.msg)
 
 
-    # model.train()
+    model.train()
 
-    model.superslomo.eval()
+    # model.superslomo.eval()
 
-    adobe_train = adobe_240fps.data_generator(cfg, split="TRAIN")
-    adobe_val = adobe_240fps.data_generator(cfg, split="VAL")
-    train_info = adobe_240fps.get_data_info(cfg, split="TRAIN")
-    val_info = adobe_240fps.get_data_info(cfg, split="VAL")
+    # adobe_train = adobe_240fps.data_generator(cfg, split="TRAIN")
+    # adobe_val = adobe_240fps.data_generator(cfg, split="VAL")
+    # train_info = adobe_240fps.get_data_info(cfg, split="TRAIN")
+    # val_info = adobe_240fps.get_data_info(cfg, split="VAL")
 
 
-    PSNR, IE, SSIM = model.compute_metrics(adobe_train, train_info, "TRAIN")
-    logging.info("ADOBE TRAIN: Average PSNR %.3f IE %.3f SSIM %.3f"%(PSNR, IE, SSIM))
+    # PSNR, IE, SSIM = model.compute_metrics(adobe_train, train_info, "TRAIN")
+    # logging.info("ADOBE TRAIN: Average PSNR %.3f IE %.3f SSIM %.3f"%(PSNR, IE, SSIM))
 
-    PSNR, IE, SSIM = model.compute_metrics(adobe_val, val_info, "VAL")
-    logging.info("ADOBE VAL: Average PSNR %.3f IE %.3f SSIM %.3f"%(PSNR, IE, SSIM))
+    # PSNR, IE, SSIM = model.compute_metrics(adobe_val, val_info, "VAL")
+    # logging.info("ADOBE VAL: Average PSNR %.3f IE %.3f SSIM %.3f"%(PSNR, IE, SSIM))
 
     # PSNR, IE, SSIM = model.compute_metrics(adobe_test)
     # logging.info("ADOBE TEST: PSNR ", PSNR, " IE: ", IE, " SSIM: ", SSIM)
