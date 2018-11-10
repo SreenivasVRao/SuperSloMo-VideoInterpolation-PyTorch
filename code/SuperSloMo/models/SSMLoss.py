@@ -118,7 +118,7 @@ class SmoothnessLoss(nn.Module):
         img = F.pad(img, (0, 0, 0, 1), mode="replicate")
         gy = img[:, :, :-1, :] - img[:, :, 1:, :]  # NCHW
         return gy
-
+ 
 
 class SSMLosses(nn.Module):
 
@@ -210,7 +210,7 @@ class SSMLosses(nn.Module):
         batch_size = flowC_input.shape[0]
 
         total_loss =  loss_reconstr +  loss_warp +  loss_perceptual
-        total_loss = total_loss/4.0
+        total_loss = total_loss/float(torch.cuda.device_count())
         
         """
         Loss is averaged on each GPU. So combining across 4 GPUs, we need to average it.

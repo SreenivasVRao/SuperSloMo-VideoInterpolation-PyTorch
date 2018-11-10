@@ -3,6 +3,8 @@ import math
 from skimage.measure import compare_ssim
 import torch
 
+IE_function = torch.nn.MSELoss()
+
 """
 img1, img2 should be in numpy format with type uint8.
 """
@@ -29,9 +31,20 @@ def ssim(img1, img2):
     return scores
 
 
-def interpolation_error(image1, image2):
-    diff = image1 - image2
-    diff_sq = diff **2
-    mse = np.mean(diff_sq, axis=(1, 2, 3)) # mean over H W C
-    rmse = np.sqrt(mse)
-    return rmse
+def interpolation_error(input_batch, target):
+
+    scores = []
+    for idx in range(input_batch.shape[0]):
+        img = input_batch[idx, ...][None,...] # 1 C H W
+        img_t = target[idx, ...][None,...] # 1 C H W
+        current_score = IE_function(img, img_t)
+        current_score = torch.sqrt(current_score)
+        scores.append(current_score)
+    
+    # diff = image1 - image2
+    # diff_sq = diff **2
+    # mse = np.mean(diff_sq, axis=(1, 2, 3)) # mean over H W C
+    # rmse = np.sqrt(mse)
+
+    
+    return scores

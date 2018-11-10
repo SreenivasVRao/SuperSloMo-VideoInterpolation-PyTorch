@@ -1,0 +1,12 @@
+INFO:root:Read config
+INFO:__main__:TRAIN: Extracted clip list.
+INFO:root:Read config
+INFO:__main__:TRAIN: Extracted clip list.
+INFO:root:Read config
+INFO:__main__:TRAIN: Extracted clip list.
+INFO:__main__:torch.Size([1, 3, 3, 320, 640])
+INFO:root:Read config
+INFO:__main__:['/mnt/nfs/work1/elm/hzjiang/Data/VideoInterpolation/Adobe240fps/Clips/clip_00068/frame_000061.png', '/mnt/nfs/work1/elm/hzjiang/Data/VideoInterpolation/Adobe240fps/Clips/clip_00068/frame_000065.png', '/mnt/nfs/work1/elm/hzjiang/Data/VideoInterpolation/Adobe240fps/Clips/clip_00068/frame_000069.png']
+INFO:__main__:TRAIN: Extracted clip list.
+INFO:__main__:['/mnt/nfs/work1/elm/hzjiang/Data/VideoInterpolation/Adobe240fps/Clips/clip_00039/frame_000200.png', '/mnt/nfs/work1/elm/hzjiang/Data/VideoInterpolation/Adobe240fps/Clips/clip_00039/frame_000207.png', '/mnt/nfs/work1/elm/hzjiang/Data/VideoInterpolation/Adobe240fps/Clips/clip_00039/frame_000215.png']
+INFO:__main__:VAL: Extracted clip list.

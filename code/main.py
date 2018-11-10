@@ -1,7 +1,6 @@
 from SuperSloMo.models import SSM
 from SuperSloMo.utils import adobe_240fps, metrics
 import numpy as np,  random
-import time
 import torch.optim
 import torch
 
@@ -17,7 +16,7 @@ def read_config(configpath='config.ini'):
     return config
 
 
-class SSM_Main:
+class SSMNet:
 
     def __init__(self, config, expt_name, message=None):
         """
@@ -25,11 +24,11 @@ class SSM_Main:
         Creates a summary writer callback for tensorboard.
         :param config: Config object.
         """
-
         self.cfg = config
         self.get_hyperparams()
         self.expt_name = expt_name
         self.msg = message
+        
         log_dir = os.path.join(self.cfg.get("PROJECT","DIR"), "logs")
 
         os.makedirs(os.path.join(log_dir, self.expt_name, "plots"))
@@ -49,7 +48,7 @@ class SSM_Main:
         Reads the config to get training hyperparameters.
         :return:
         """
-
+        
         self.n_epochs = self.cfg.getint("TRAIN", "N_EPOCHS")
         self.learning_rate = self.cfg.getfloat("TRAIN", "LEARNING_RATE")
         self.lr_decay = self.cfg.getfloat("TRAIN", "LR_DECAY")
@@ -76,7 +75,7 @@ class SSM_Main:
         # self.writer.add_scalars('Smoothness_Loss', {split: loss_smooth.item()}, iteration)
         self.writer.add_scalars('Warping_Loss', {split: loss_warp.item()}, iteration)
 
-    def forward_pass(self, data_batch, dataset_info, split, iteration, get_interpolation=False):
+    def forward_pass(self, data_batch, dataset_info, split, iteration, t_idx, get_interpolation=False):
         """
         :param data_batch: B H W C 0-255, np.uint8
         :param dataset_info: dataset object with corresponding split.
@@ -85,20 +84,21 @@ class SSM_Main:
         :return: if get_interpolation is set, returns interpolation result as BCHW Variable.
         otherwise returns the losses.
         """
-        
         data_batch = data_batch.cuda().float()
+        assert 1<=t_idx<=7, "Invalid time-step: "+str(t_idx)
         img_0 = data_batch[:, 0, ...]
         img_t = data_batch[:, 1, ...]
         img_1 = data_batch[:, -1, ...]
+        t_interp = float(t_idx)/8
 
         if not get_interpolation:
-            loss_buffer = torch.autograd.Variable(torch.from_numpy(np.zeros([1, 4]))).float().cuda(1)
-            losses = self.superslomo(img_0, img_1, dataset_info, self.t_interp, img_t, loss_buffer, split, iteration)[0,:]
+            loss_buffer = torch.autograd.Variable(torch.from_numpy(np.zeros([1, 4]))).float().cuda(0)
+            losses = self.superslomo(img_0, img_1, dataset_info, t_interp, img_t, loss_buffer, split, iteration)[0,:]
             self.write_losses(losses, iteration, split)
             total_loss = losses[0]
             return total_loss
         else:
-            interpolation_result  = self.superslomo(img_0, img_1, dataset_info, self.t_interp, split=split, iteration=iteration)
+            interpolation_result  = self.superslomo(img_0, img_1, dataset_info, t_interp, split=split, iteration=iteration)
             return interpolation_result, img_t
 
     def train(self):
@@ -117,12 +117,14 @@ class SSM_Main:
         for epoch in range(1, self.n_epochs+1):
             # shuffles the data on each epoch
             adobe_train_samples = adobe_240fps.data_generator(self.cfg, split="TRAIN")
-            adobe_val_samples = adobe_240fps.data_generator(self.cfg, split="VAL")
+            adobe_val_samples = adobe_240fps.data_generator(self.cfg, split="VAL", eval=True)
             lr_scheduler.step()
 
             for train_batch in adobe_train_samples:
                 iteration +=1
-                train_loss = self.forward_pass(train_batch, train_info, "TRAIN", iteration)
+                data_batch, t_idx = train_batch
+                
+                train_loss = self.forward_pass(data_batch, train_info, "TRAIN", iteration, t_idx)
 
                 optimizer.zero_grad()
                 train_loss.backward()
@@ -131,10 +133,11 @@ class SSM_Main:
                 try:
                     val_batch = next(adobe_val_samples)
                 except StopIteration:
-                    adobe_val_samples = adobe_240fps.data_generator(self.cfg, split="VAL")
+                    adobe_val_samples = adobe_240fps.data_generator(self.cfg, split="VAL", eval=True)
                     val_batch = next(adobe_val_samples)
 
-                self.forward_pass(val_batch, val_info, "VAL", iteration)
+                data_batch, t_idx = val_batch
+                self.forward_pass(data_batch, val_info, "VAL", iteration, t_idx)
 
             log.info("Epoch: "+str(epoch)+" Iteration: "+str(iteration))
 
@@ -170,13 +173,17 @@ class SSM_Main:
         nframes = 0
 
         for iteration, a_batch in enumerate(dataset):
-            a_batch = a_batch.cuda().float()
-            for idx in range(1, 8):
-                t_interp = float(idx)/8
-                est_image_t, _  = self.forward_pass(a_batch, info, split, iteration, t_interp, get_interpolation=True)
-                gt_image_t = a_batch[:, idx, ...]
+            data_batch, _ = a_batch
+            data_batch = data_batch.cuda().float()
+            if iteration==1:
+                log.info(data_batch.shape)
+            for t_idx in range(1, 8):
+                est_image_t, _= self.forward_pass(data_batch, info, split, iteration, t_idx, get_interpolation=True)
+                gt_image_t = data_batch[:, t_idx, ...]
                 est_image_t = est_image_t * 255.0
                 gt_image_t  = gt_image_t * 255.0
+                
+                IE_scores = metrics.interpolation_error(est_image_t, gt_image_t)
 
                 est_image_t = est_image_t.permute(0, 2, 3, 1) # BCHW -> BHWC
                 gt_image_t  = gt_image_t.permute(0, 2, 3, 1) # BCHW -> BHWC
@@ -186,15 +193,15 @@ class SSM_Main:
 
                 est_image_t = est_image_t.astype(np.uint8)
                 gt_image_t  =  gt_image_t.astype(np.uint8)
-                IE_scores = metrics.interpolation_error(est_image_t, gt_image_t)
+
                 ssim_scores = metrics.ssim(est_image_t, gt_image_t)
                 psnr_scores = metrics.psnr(est_image_t, gt_image_t)
                 total_IE   += np.sum(IE_scores)
                 total_ssim += np.sum(ssim_scores)
                 total_PSNR += np.sum(psnr_scores)
-            n_interpolations = a_batch.shape[1]-2 # exclude i_0, i_1
-            nframes += a_batch.shape[0]*n_interpolations  # interpolates nframes Batch size - 2 frames (i0, i1)
-
+            n_interpolations = data_batch.shape[1]-2 # exclude i_0, i_1
+            nframes += data_batch.shape[0]*n_interpolations  # interpolates nframes Batch size - 2 frames (i0, i1)
+        log.info(data_batch.shape)
 
         avg_IE = float(total_IE)/nframes
         avg_ssim = float(total_ssim)/nframes
@@ -229,29 +236,29 @@ if __name__ == '__main__':
 
     log.info("SEED: %s"%torch.initial_seed())
 
+    ssm_net = SSMNet(cfg, args.expt, args.msg)
 
-    model = SSM_Main(cfg, args.expt, args.msg)
+    ssm_net.train()
 
+    log.info("Training complete.")
+    # log.info("Evaluating metrics.")
 
-    model.train()
+    # ssm_net.superslomo.eval()
 
-    # model.superslomo.eval()
-
-    # adobe_train = adobe_240fps.data_generator(cfg, split="TRAIN")
-    # adobe_val = adobe_240fps.data_generator(cfg, split="VAL")
+    # adobe_train = adobe_240fps.data_generator(cfg, split="TRAIN", eval=True)
+    # adobe_val = adobe_240fps.data_generator(cfg, split="VAL", eval=True)
     # train_info = adobe_240fps.get_data_info(cfg, split="TRAIN")
     # val_info = adobe_240fps.get_data_info(cfg, split="VAL")
-
-
-    # PSNR, IE, SSIM = model.compute_metrics(adobe_train, train_info, "TRAIN")
+        
+    # PSNR, IE, SSIM = ssm_net.compute_metrics(adobe_train, train_info, "TRAIN")
     # logging.info("ADOBE TRAIN: Average PSNR %.3f IE %.3f SSIM %.3f"%(PSNR, IE, SSIM))
 
-    # PSNR, IE, SSIM = model.compute_metrics(adobe_val, val_info, "VAL")
+    # PSNR, IE, SSIM = ssm_net.compute_metrics(adobe_val, val_info, "VAL")
     # logging.info("ADOBE VAL: Average PSNR %.3f IE %.3f SSIM %.3f"%(PSNR, IE, SSIM))
 
-    # PSNR, IE, SSIM = model.compute_metrics(adobe_test)
+    # PSNR, IE, SSIM = ssm_net.compute_metrics(adobe_test)
     # logging.info("ADOBE TEST: PSNR ", PSNR, " IE: ", IE, " SSIM: ", SSIM)
-
+    
 
 ##################################################
 # //Set the controls for the heart of the sun!// #
