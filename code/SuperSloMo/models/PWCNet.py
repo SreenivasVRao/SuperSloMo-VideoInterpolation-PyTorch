@@ -487,7 +487,7 @@ class PWCDCNet_old(nn.Module):
 
 
 
-def pwc_dc_net(path=None, customweights=True):
+def pwc_dc_net(path=None, customweights=False):
     model = PWCDCNet()
     if path is not None:
         data = torch.load(path)

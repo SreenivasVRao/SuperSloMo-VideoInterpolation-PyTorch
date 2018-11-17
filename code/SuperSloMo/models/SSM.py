@@ -207,8 +207,8 @@ if __name__ == '__main__':
         return img
 
 
-    for clip_idx in [0]:#, 42, 51]:
-        fpath = "/mnt/nfs/work1/elm/hzjiang/Data/VideoInterpolation/YouTube240fps/Clips/clip_"+str(clip_idx).zfill(5)+"/"
+    for clip_idx in [39, 81]:#, 42, 51]:
+        fpath = "/mnt/nfs/work1/elm/hzjiang/Data/VideoInterpolation/Adobe240fps/Clips/clip_"+str(clip_idx).zfill(5)+"/"
         images_list = glob.glob(os.path.join(fpath, "*.png"))
         images_list.sort()
         images_list = images_list[::8] # get 30 fps version.

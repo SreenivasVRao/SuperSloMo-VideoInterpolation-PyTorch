@@ -92,7 +92,7 @@ class SSMNet:
         t_interp = float(t_idx)/8
 
         if not get_interpolation:
-            loss_buffer = torch.autograd.Variable(torch.from_numpy(np.zeros([1, 4]))).float().cuda(0)
+            loss_buffer = torch.autograd.Variable(torch.from_numpy(np.zeros([1, 4]))).float().cuda(1)
             losses = self.superslomo(img_0, img_1, dataset_info, t_interp, img_t, loss_buffer, split, iteration)[0,:]
             self.write_losses(losses, iteration, split)
             total_loss = losses[0]
@@ -178,7 +178,7 @@ class SSMNet:
             if iteration==1:
                 log.info(data_batch.shape)
             for t_idx in range(1, 8):
-                est_image_t, _= self.forward_pass(data_batch, info, split, iteration, t_idx, get_interpolation=True)
+                est_image_t, _ = self.forward_pass(data_batch, info, split, iteration, t_idx, get_interpolation=True)
                 gt_image_t = data_batch[:, t_idx, ...]
                 est_image_t = est_image_t * 255.0
                 gt_image_t  = gt_image_t * 255.0
@@ -193,9 +193,9 @@ class SSMNet:
 
                 est_image_t = est_image_t.astype(np.uint8)
                 gt_image_t  =  gt_image_t.astype(np.uint8)
-
-                ssim_scores = metrics.ssim(est_image_t, gt_image_t)
+                
                 psnr_scores = metrics.psnr(est_image_t, gt_image_t)
+                ssim_scores = metrics.ssim(est_image_t, gt_image_t)
                 total_IE   += np.sum(IE_scores)
                 total_ssim += np.sum(ssim_scores)
                 total_PSNR += np.sum(psnr_scores)

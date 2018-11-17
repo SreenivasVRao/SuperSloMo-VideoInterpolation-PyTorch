@@ -107,11 +107,11 @@ class UNet(nn.Module):
                                        nn.Conv2d(in_channels=32, out_channels=out_channels, kernel_size=3, stride=1, padding=0, dilation=1, bias=True))
 
 
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d):
-                nn.init.kaiming_normal(m.weight.data, mode='fan_in')
-                if m.bias is not None:
-                    m.bias.data.zero_()
+        # for m in self.modules():
+        #     if isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d):
+        #         nn.init.kaiming_normal(m.weight.data, mode='fan_in')
+        #         if m.bias is not None:
+        #             m.bias.data.zero_()
 
 
     def forward(self, flowI_input):

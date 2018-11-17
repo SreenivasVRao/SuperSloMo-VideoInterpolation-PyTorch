@@ -56,7 +56,7 @@ class Reader(Dataset):
         """
         n_frames = len(image_list)
 
-        if np.random.randint(0, 2)==1:
+        if self.split=="TRAIN" and np.random.randint(0, 2)==1:
             image_list = image_list[::-1]
 
         if n_frames == 9:
@@ -156,7 +156,7 @@ class AugmentData(object):
 
         cx = np.random.randint(0, W)
         cy = np.random.randint(0, H)
-        theta = np.random.uniform(-30, 30)
+        theta = np.random.uniform(-10, 10)
         M = cv2.getRotationMatrix2D((cx, cy),theta,1)
         # rotate around random center.
  
