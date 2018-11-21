@@ -1,5 +1,5 @@
 from SuperSloMo.models import SSM
-from SuperSloMo.utils import adobe_240fps, metrics
+from SuperSloMo.utils import adobe_240fps, metrics_v2
 import numpy as np,  random
 import torch.optim
 import torch
@@ -108,7 +108,7 @@ class SSMNet:
         :return:
         """
         optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.superslomo.parameters()),  lr=self.learning_rate)
-        lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=self.lr_period, gamma=self.lr_decay)
+        # lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=self.lr_period, gamma=self.lr_decay)
         iteration = 1
 
         train_info = adobe_240fps.get_data_info(self.cfg, split="TRAIN")
@@ -118,7 +118,7 @@ class SSMNet:
             # shuffles the data on each epoch
             adobe_train_samples = adobe_240fps.data_generator(self.cfg, split="TRAIN")
             adobe_val_samples = adobe_240fps.data_generator(self.cfg, split="VAL", eval=True)
-            lr_scheduler.step()
+            # lr_scheduler.step()
 
             for train_batch in adobe_train_samples:
                 iteration +=1
@@ -138,9 +138,18 @@ class SSMNet:
 
                 data_batch, t_idx = val_batch
                 self.forward_pass(data_batch, val_info, "VAL", iteration, t_idx)
-
+                if iteration<=400:
+                    for param_group in optimizer.param_groups:
+                        param_group['lr'] += 1e-6
+                        self.writer.add_scalars("Learning_Rate", {"TRAIN": param_group["lr"]}, iteration)
+                        
+            if epoch==self.lr_period:
+                for param_group in optimizer.param_groups:
+                    param_group['lr'] *= self.lr_decay
+                    log.info("Learning rate after 200 epochs: %s"%param_group["lr"])
+                    
             log.info("Epoch: "+str(epoch)+" Iteration: "+str(iteration))
-
+            
             if epoch%self.save_every==0:
                 if isinstance(self.superslomo, torch.nn.DataParallel):
                     model = self.superslomo.module
@@ -172,6 +181,10 @@ class SSMNet:
 
         nframes = 0
 
+        ssim_total = np.zeros([8])
+        psnr_total = np.zeros([8])
+        ie_total = np.zeros([8])
+
         for iteration, a_batch in enumerate(dataset):
             data_batch, _ = a_batch
             data_batch = data_batch.cuda().float()
@@ -180,32 +193,35 @@ class SSMNet:
             for t_idx in range(1, 8):
                 est_image_t, _ = self.forward_pass(data_batch, info, split, iteration, t_idx, get_interpolation=True)
                 gt_image_t = data_batch[:, t_idx, ...]
-                est_image_t = est_image_t * 255.0
-                gt_image_t  = gt_image_t * 255.0
-                
-                IE_scores = metrics.interpolation_error(est_image_t, gt_image_t)
 
-                est_image_t = est_image_t.permute(0, 2, 3, 1) # BCHW -> BHWC
-                gt_image_t  = gt_image_t.permute(0, 2, 3, 1) # BCHW -> BHWC
+                psnr_scores, IE_scores, ssim_scores = metrics_v2.get_scores(est_image_t, gt_image_t)
 
-                est_image_t = est_image_t.cpu().data.numpy()
-                gt_image_t  =  gt_image_t.cpu().data.numpy()
+                ie_total[t_idx] += np.sum(IE_scores)
+                ssim_total[t_idx] += np.sum(ssim_scores)
+                psnr_total[t_idx] += np.sum(psnr_scores)
 
-                est_image_t = est_image_t.astype(np.uint8)
-                gt_image_t  =  gt_image_t.astype(np.uint8)
-                
-                psnr_scores = metrics.psnr(est_image_t, gt_image_t)
-                ssim_scores = metrics.ssim(est_image_t, gt_image_t)
                 total_IE   += np.sum(IE_scores)
                 total_ssim += np.sum(ssim_scores)
                 total_PSNR += np.sum(psnr_scores)
             n_interpolations = data_batch.shape[1]-2 # exclude i_0, i_1
             nframes += data_batch.shape[0]*n_interpolations  # interpolates nframes Batch size - 2 frames (i0, i1)
+
         log.info(data_batch.shape)
 
         avg_IE = float(total_IE)/nframes
         avg_ssim = float(total_ssim)/nframes
         avg_PSNR = float(total_PSNR)/nframes
+
+        avg_ie_perframe = ie_total*7.0/nframes
+        avg_ssim_perframe = ssim_total*7.0/nframes
+        avg_psnr_perframe = psnr_total*7.0/nframes
+
+        log.info("Average IE:")
+        log.info(avg_ie_perframe)
+        log.info("Average SSIM:")
+        log.info(avg_ssim_perframe)
+        log.info("Average PSNR:")
+        log.info(avg_psnr_perframe)
 
         return avg_PSNR, avg_IE, avg_ssim
 
@@ -240,7 +256,8 @@ if __name__ == '__main__':
 
     ssm_net.train()
 
-    log.info("Training complete.")
+    # log.info("Training complete.")
+    
     # log.info("Evaluating metrics.")
 
     # ssm_net.superslomo.eval()
