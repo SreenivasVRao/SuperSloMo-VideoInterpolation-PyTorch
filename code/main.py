@@ -1,6 +1,6 @@
 from SuperSloMo.models import SSM
 from SuperSloMo.utils import adobe_240fps, metrics_v2
-import numpy as np,  random
+import numpy as np, random
 import torch.optim
 import torch
 
@@ -94,6 +94,7 @@ class SSMNet:
         if not get_interpolation:
             loss_buffer = torch.autograd.Variable(torch.from_numpy(np.zeros([1, 4]))).float().cuda(1)
             losses = self.superslomo(img_0, img_1, dataset_info, t_interp, img_t, loss_buffer, split, iteration)[0,:]
+            # log.info("Completed forward pass.")
             self.write_losses(losses, iteration, split)
             total_loss = losses[0]
             return total_loss
@@ -108,7 +109,7 @@ class SSMNet:
         :return:
         """
         optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.superslomo.parameters()),  lr=self.learning_rate)
-        # lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=self.lr_period, gamma=self.lr_decay)
+        lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=self.lr_period, gamma=self.lr_decay)
         iteration = 1
 
         train_info = adobe_240fps.get_data_info(self.cfg, split="TRAIN")
@@ -118,7 +119,7 @@ class SSMNet:
             # shuffles the data on each epoch
             adobe_train_samples = adobe_240fps.data_generator(self.cfg, split="TRAIN")
             adobe_val_samples = adobe_240fps.data_generator(self.cfg, split="VAL", eval=True)
-            # lr_scheduler.step()
+            lr_scheduler.step()
 
             for train_batch in adobe_train_samples:
                 iteration +=1
@@ -129,7 +130,6 @@ class SSMNet:
                 optimizer.zero_grad()
                 train_loss.backward()
                 optimizer.step()
-
                 try:
                     val_batch = next(adobe_val_samples)
                 except StopIteration:
@@ -138,15 +138,14 @@ class SSMNet:
 
                 data_batch, t_idx = val_batch
                 self.forward_pass(data_batch, val_info, "VAL", iteration, t_idx)
-                if iteration<=400:
-                    for param_group in optimizer.param_groups:
-                        param_group['lr'] += 1e-6
-                        self.writer.add_scalars("Learning_Rate", {"TRAIN": param_group["lr"]}, iteration)
-                        
-            if epoch==self.lr_period:
-                for param_group in optimizer.param_groups:
-                    param_group['lr'] *= self.lr_decay
-                    log.info("Learning rate after 200 epochs: %s"%param_group["lr"])
+                # if iteration<=401: # 400 iterations in total 
+                #     for param_group in optimizer.param_groups:
+                #         param_group['lr'] = 1e-4 + iteration * 1e-6
+                #         self.writer.add_scalars("Learning_Rate", {"TRAIN": param_group["lr"]}, iteration)
+            # if epoch==self.lr_period:
+            #     for param_group in optimizer.param_groups:
+            #         param_group['lr'] *= self.lr_decay
+            #         log.info("Learning rate after 200 epochs: %s"%param_group["lr"])
                     
             log.info("Epoch: "+str(epoch)+" Iteration: "+str(iteration))
             
@@ -263,18 +262,16 @@ if __name__ == '__main__':
     # ssm_net.superslomo.eval()
 
     # adobe_train = adobe_240fps.data_generator(cfg, split="TRAIN", eval=True)
-    # adobe_val = adobe_240fps.data_generator(cfg, split="VAL", eval=True)
     # train_info = adobe_240fps.get_data_info(cfg, split="TRAIN")
-    # val_info = adobe_240fps.get_data_info(cfg, split="VAL")
         
     # PSNR, IE, SSIM = ssm_net.compute_metrics(adobe_train, train_info, "TRAIN")
     # logging.info("ADOBE TRAIN: Average PSNR %.3f IE %.3f SSIM %.3f"%(PSNR, IE, SSIM))
 
+    # adobe_val = adobe_240fps.data_generator(cfg, split="VAL", eval=True)
+    # val_info = adobe_240fps.get_data_info(cfg, split="VAL")
+    
     # PSNR, IE, SSIM = ssm_net.compute_metrics(adobe_val, val_info, "VAL")
     # logging.info("ADOBE VAL: Average PSNR %.3f IE %.3f SSIM %.3f"%(PSNR, IE, SSIM))
-
-    # PSNR, IE, SSIM = ssm_net.compute_metrics(adobe_test)
-    # logging.info("ADOBE TEST: PSNR ", PSNR, " IE: ", IE, " SSIM: ", SSIM)
     
 
 ##################################################

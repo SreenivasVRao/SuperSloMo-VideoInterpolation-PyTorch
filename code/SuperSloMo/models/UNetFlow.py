@@ -347,46 +347,42 @@ class UNetC(nn.Module):
 
         # block 7
 
-        self.upsample7 = lambda x: F.upsample(x, size=(2 * x.shape[2], 2 * x.shape[3]),
-                                              mode='bilinear')  # 2 x 2 upsampling
+        # self.upsample7 = lambda x: F.upsample(x, size=(2 * x.shape[2], 2 * x.shape[3]),
+        #                                       mode='bilinear')  # 2 x 2 upsampling
+        self.upsample7 = upsample(in_planes=512, out_planes=512, scale=2,mode='bilinear')
         # 1/16
 
         self.conv7a = conv(in_planes=1024, out_planes=512,kernel_size=3)
-        self.conv7b = conv(in_planes=512, out_planes=256, kernel_size=3)
-
+        self.conv7b = conv(in_planes=512, out_planes=512, kernel_size=3)
 
         # block 8
 
-        self.upsample8 = lambda x: F.upsample(x, size=(2 * x.shape[2], 2 * x.shape[3]),
-                                              mode='bilinear')  # 2 x 2 upsampling
+        self.upsample8 = upsample(in_planes=512, out_planes=256, scale=2,mode='bilinear')
         # 1/8
 
         self.conv8a = conv(in_planes=512, out_planes=256, kernel_size=3)
-        self.conv8b = conv(in_planes=256, out_planes=128, kernel_size=3)
+        self.conv8b = conv(in_planes=256, out_planes=256, kernel_size=3)
 
 
         # block 9
 
-        self.upsample9 = lambda x: F.upsample(x, size=(2 * x.shape[2], 2 * x.shape[3]),
-                                              mode='bilinear')  # 2 x 2 upsampling
+        self.upsample9 = upsample(in_planes=256, out_planes=128, scale=2,mode='bilinear')
         # 1/4
 
         self.conv9a = conv(in_planes=256, out_planes=128, kernel_size=3)
-        self.conv9b = conv(in_planes=128, out_planes=64, kernel_size=3)
+        self.conv9b = conv(in_planes=128, out_planes=128, kernel_size=3)
 
         # # block 10
         #
-        self.upsample10 = lambda x: F.upsample(x, size=(2 * x.shape[2], 2 * x.shape[3]),
-                                               mode='bilinear')  # 2 x 2 upsampling
+        self.upsample10 = upsample(in_planes=128, out_planes=64, scale=2,mode='bilinear')
         # 1/2
 
         self.conv10a = conv(in_planes=128, out_planes=64, kernel_size=3)
-        self.conv10b = conv(in_planes=64, out_planes=32, kernel_size=3)
+        self.conv10b = conv(in_planes=64, out_planes=64, kernel_size=3)
 
         # block 11
 
-        self.upsample11 = lambda x: F.upsample(x, size=(2 * x.shape[2], 2 * x.shape[3]),
-                                               mode='bilinear')  # 2 x 2 upsampling
+        self.upsample11 = upsample(in_planes=64, out_planes=32, scale=2,mode='bilinear')
         # 1
 
         self.conv11a = conv(in_planes=64, out_planes=32, kernel_size=3)
@@ -462,7 +458,7 @@ class UNetC(nn.Module):
         if self.verbose:
             log.info("Output Block 8: "+str(conv8b_out.shape))
 
-        upsample9_out = self.upsample8(conv8b_out)
+        upsample9_out = self.upsample9(conv8b_out)
         conv9a_in = torch.cat([upsample9_out, conv3b_out], dim=1)
         conv9a_out = self.conv9a(conv9a_in)
         conv9b_out = self.conv9b(conv9a_out)
@@ -574,9 +570,6 @@ class UNetC(nn.Module):
         pred_img_t = weighted_sum/normalization_factor
 
         return pred_img_t
-
-
-
 
 
 def get_modelA(path, in_channels, out_channels, verbose=False):

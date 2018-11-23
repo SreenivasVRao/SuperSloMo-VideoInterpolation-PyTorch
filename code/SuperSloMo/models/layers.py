@@ -15,6 +15,13 @@ def avg_pool(kernel_size=2, stride=None, padding=0):
     return nn.AvgPool2d(kernel_size, stride, padding, ceil_mode=False, count_include_pad=True)
 
 
+def upsample(in_planes, out_planes, scale=2, mode='bilinear'):
+    return nn.Sequential(
+        nn.Upsample(scale_factor=scale, mode=mode),
+        nn.Conv1d(in_planes, out_planes, kernel_size=(1,1))
+    )
+
+
 def warp(x, flo):
         """
         warp an image/tensor (im2) back to im1, according to the optical flow
