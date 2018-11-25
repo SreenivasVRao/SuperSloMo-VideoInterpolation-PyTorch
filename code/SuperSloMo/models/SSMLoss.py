@@ -207,8 +207,6 @@ class SSMLosses(nn.Module):
         loss_perceptual =lambda_p * self.get_perceptual_loss(interpolated_image*255.0, target_image*255.0)
         loss_warp = lambda_w * self.get_warp_loss(flowC_input, flowC_output, flowI_input, flowI_output, target_image)*255.0
 
-        batch_size = flowC_input.shape[0]
-
         total_loss =  loss_reconstr +  loss_warp +  loss_perceptual
         total_loss = total_loss/float(torch.cuda.device_count())
         

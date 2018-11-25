@@ -5,7 +5,6 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 import logging
-import numpy as np
 
 log = logging.getLogger(__name__)
 
@@ -33,23 +32,26 @@ class FullModel(nn.Module):
         if self.cfg.getboolean("STAGE2", "LOADPREV"):
             stage2_weights = self.cfg.get("STAGE2", "WEIGHTS")
 
+        self.cross_skip = self.cfg.getboolean("STAGE2", "CROSS_SKIP")
+            
         if self.cfg.get("STAGE1", "MODEL")=="PWC":
+            log.info("STAGE1 PWC")
             self.stage1_model = PWCNet.pwc_dc_net(stage1_weights)  # Flow Computation Model
 
-        elif self.cfg.get("STAGE1", "MODEL")=="UNETA":
-            self.stage1_model = UNetFlow.get_modelA(stage1_weights,
-                                                    in_channels=6, out_channels=4)
-        elif self.cfg.get("STAGE1", "MODEL")=="UNETC":
-            self.stage1_model = UNetFlow.get_modelC(stage1_weights,
-                                                    in_channels=6, out_channels=4)
-
+        elif self.cfg.get("STAGE1", "MODEL") in ["UNET", "UNETC", "UNETA"]:
+            log.info("STAGE 1 %s"%self.cfg.get("STAGE1", "MODEL"))
+            
+            self.stage1_model = UNetFlow.get_model(stage1_weights, in_channels=6, out_channels=4, cross_skip=self.cross_skip, stage=1)
+            
         # Flow Computation Model
-        if self.cfg.get("STAGE2", "MODEL") == "UNETA":
-            self.stage2_model = UNetFlow.get_modelA(stage2_weights, in_channels=16,
-                                                    out_channels=5)  # Flow Interpolation Model
-        elif self.cfg.get("STAGE2", "MODEL") == "UNETC":
-            self.stage2_model = UNetFlow.get_modelC(stage2_weights, in_channels=16,
-                                                    out_channels=5)  # Flow Interpolation Model
+        log.info("STAGE 2 %s"%self.cfg.get("STAGE2", "MODEL"))
+        self.stage2_model = UNetFlow.get_model(stage2_weights, in_channels=16, out_channels=5, cross_skip=self.cross_skip, stage=2)
+        # Flow Interpolation Model
+
+        if self.cross_skip:
+            log.info("Cross stage Skip Connections: ENABLED")
+        else:
+            log.info("Cross stage Skip Connections: DISABLED")
 
         if self.cfg.getboolean("STAGE1", "FREEZE"):
             log.info("Freezing stage1 model.")
@@ -66,6 +68,8 @@ class FullModel(nn.Module):
                 param.requires_grad = False
         else:
             log.info("Training stage2 model.")
+
+        
 
     def stage1_computations(self, img0, img1, dataset_info):
         """
@@ -87,7 +91,7 @@ class FullModel(nn.Module):
 
             flow_tensor = self.post_process_flow(flow_tensor, dataset_info)
 
-        elif self.cfg.get("STAGE1", "MODEL") in ["UNETA", "UNETC"]:
+        elif self.cfg.get("STAGE1", "MODEL") in ["UNET", "UNETA", "UNETC"]:
             flow_tensor = self.stage1_model(input_pair_01)
 
         return img_tensor, flow_tensor
@@ -105,50 +109,46 @@ class FullModel(nn.Module):
         upsampled_flow = F.upsample(flow_tensor, size=(H, W), mode='bilinear')
 
         s_H, s_W = scale_factors
-        upsampled_flow[:, [0,2], ...] = upsampled_flow[:, [0,2], ...] * s_W
+        upsampled_flow[:, 0::2, ...] = upsampled_flow[:, 0::2, ...] * s_W
         # u vectors
 
-        upsampled_flow[:, [1,3], ...] = upsampled_flow[:, [1,3], ...] * s_H
+        upsampled_flow[:, 1::2, ...] = upsampled_flow[:, 1::2, ...] * s_H
         # v vectors
 
         return upsampled_flow
 
     def forward(self, image_0, image_1, dataset_info, t_interp, target_image=None, output_buffer=None, split=None, iteration=None):
 
-        img_tensor, flow_tensor = self.stage1_computations(image_0, image_1, dataset_info)
+        img_tensor, flowC_out = self.stage1_computations(image_0, image_1, dataset_info)
+        
+        if self.cross_skip:
+            encoder_out, flow_tensor = flowC_out
+        else:
+            flow_tensor = flowC_out
+            encoder_out = None
 
         flowI_input = self.stage2_model.compute_inputs(img_tensor, flow_tensor, t=t_interp)
 
-        flowI_output = self.stage2_model(flowI_input)
+        flowI_output = self.stage2_model(flowI_input, encoder_out)
+    
         interpolation_result = self.stage2_model.compute_output_image(img_tensor, flowI_input, flowI_output, t=t_interp)
-
-        # def write_to_disk(tensor, name, iteration):
-        #     data = tensor.cpu().data.numpy()
-        #     np.savez(name+"_iter_"+str(iteration).zfill(4)+".npz", name=data)
-
-        # t_value = int(t_interp * 8)
-
-        # write_to_disk(img_tensor, "image_"+str(t_value), iteration)
-        # write_to_disk(flow_tensor, "flowC_out_"+str(t_value), iteration)
-        # write_to_disk(flowI_input, "flowI_in_"+str(t_value), iteration)
-        # write_to_disk(flowI_output, "flowI_out_"+str(t_value), iteration)
-        # write_to_disk(interpolation_result, "interpolated_image_"+str(t_value), iteration)
-
-        # if iteration==5:
-        #     exit(0)
 
         if iteration % 100 == 0:
             self.writer.add_image(split, interpolation_result[0, [2,1,0], ...], iteration)
+            
         if output_buffer is not None:
             losses = self.loss(img_tensor, flow_tensor, flowI_input, flowI_output, interpolation_result, target_image)
             output_buffer[0, :] += losses
-            output_buffer
 
             return output_buffer
         else:
             return interpolation_result
 
+        
 def full_model(config, writer):
+    """
+    Returns the SuperSloMo model with config and writer as specified.
+    """
     model = FullModel(config, writer)
     return model
 
@@ -231,7 +231,7 @@ if __name__ == '__main__':
         return img
 
 
-    for clip_idx in [81]:#, 42, 51]:
+    for clip_idx in [39, 81]:#, 42, 51]:
         fpath = "/mnt/nfs/work1/elm/hzjiang/Data/VideoInterpolation/Adobe240fps/Clips/clip_"+str(clip_idx).zfill(5)+"/"
         images_list = glob.glob(os.path.join(fpath, "*.png"))
         images_list.sort()
@@ -242,10 +242,9 @@ if __name__ == '__main__':
         h,w,c = img_0.shape
         vFlag = h>w # horizontal video => h<=w vertical video => w< h
         h_start = np.random.randint(0, 720-704+1)
+
+        #h_start = np.random.randint(0, 1080-1024+1)
         info=(704, 1280),(1.0, 1.0)
-        
-        # h_start = np.random.randint(0, 1080-1024+1)
-        # info=(1024, 1280),(1.0, 1.0)
 
         img_dir = os.path.join(log_dir, args.expt, "images", "clip_"+str(clip_idx).zfill(5))
         os.makedirs(img_dir)
@@ -262,8 +261,6 @@ if __name__ == '__main__':
             log.info(iteration)
             img_0 = get_image(impath0, vFlag)[:, :,  h_start:h_start+704, :]
             img_1 = get_image(impath1, vFlag)[:, :,  h_start:h_start+704, :]
-            # img_0 = get_image(impath0, vFlag)[:, :,  h_start:h_start+1024, :]
-            # img_1 = get_image(impath1, vFlag)[:, :,  h_start:h_start+1024, :]
 
             img_0_np = img_0 * 255.0
             img_0_np = img_0_np.permute(0,2, 3, 1)[0, ...]

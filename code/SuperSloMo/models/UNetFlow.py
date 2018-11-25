@@ -6,12 +6,11 @@ import logging
 
 log = logging.getLogger(__name__)
 
+class UNet(nn.Module):
 
-class UNetA(nn.Module):
-
-    def __init__(self, in_channels, out_channels, batch_norm=False, verbose=False):
-        super(UNetA, self).__init__()
-        self.batchNorm = batch_norm
+    def __init__(self, in_channels, out_channels, cross_skip, verbose=False):
+        super(UNet, self).__init__()
+        self.cross_skip = cross_skip
         self.verbose = verbose
         self.build_model(in_channels, out_channels)
         self.squash = nn.Sigmoid()
@@ -113,6 +112,7 @@ class UNetA(nn.Module):
         #         nn.init.kaiming_normal(m.weight.data, mode='fan_in')
         #         if m.bias is not None:
         #             m.bias.data.zero_()
+
 
     def forward(self, flowI_input):
         """
@@ -295,12 +295,15 @@ class UNetA(nn.Module):
 
 class UNetC(nn.Module):
 
-    def __init__(self, in_channels, out_channels, batch_norm=False, verbose=False):
+    def __init__(self, in_channels, out_channels, cross_skip, verbose=False, stage=-1):
         super(UNetC, self).__init__()
-        self.batchNorm = batch_norm
-        self.verbose = verbose
+        self.verbose = verbose 
+        self.stage=stage
+        self.cross_skip_connect = cross_skip
+        # skip connection from stage1 to stage2
         self.build_model(in_channels, out_channels)
         self.squash = nn.Sigmoid()
+        
 
     def build_model(self, in_channels, out_channels):
         """
@@ -347,57 +350,76 @@ class UNetC(nn.Module):
 
         # block 7
 
-        # self.upsample7 = lambda x: F.upsample(x, size=(2 * x.shape[2], 2 * x.shape[3]),
-        #                                       mode='bilinear')  # 2 x 2 upsampling
-        self.upsample7 = upsample(in_planes=512, out_planes=512, scale=2,mode='bilinear')
+        self.upsample7 = lambda x: F.upsample(x, size=(2 * x.shape[2], 2 * x.shape[3]), mode='bilinear')  # 2 x 2 upsampling
+        
         # 1/16
 
-        self.conv7a = conv(in_planes=1024, out_planes=512,kernel_size=3)
-        self.conv7b = conv(in_planes=512, out_planes=512, kernel_size=3)
+        if self.cross_skip_connect and self.stage==2:
+            self.conv7a = conv(in_planes=1536, out_planes=512,kernel_size=3)
+        else:
+            self.conv7a = conv(in_planes=1024, out_planes=512,kernel_size=3)
+        self.conv7b = conv(in_planes=512, out_planes=256, kernel_size=3)
 
         # block 8
 
-        self.upsample8 = upsample(in_planes=512, out_planes=256, scale=2,mode='bilinear')
+        self.upsample8 = lambda x: F.upsample(x, size=(2 * x.shape[2], 2 * x.shape[3]), mode='bilinear')  # 2 x 2 upsampling
+        
         # 1/8
 
-        self.conv8a = conv(in_planes=512, out_planes=256, kernel_size=3)
-        self.conv8b = conv(in_planes=256, out_planes=256, kernel_size=3)
+        if self.cross_skip_connect and self.stage==2:
+            self.conv8a = conv(in_planes=768, out_planes=256, kernel_size=3)
+        else:
+            self.conv8a = conv(in_planes=512, out_planes=256, kernel_size=3)
+            
+        self.conv8b = conv(in_planes=256, out_planes=128, kernel_size=3)
 
 
         # block 9
+        self.upsample9 = lambda x: F.upsample(x, size=(2 * x.shape[2], 2 * x.shape[3]), mode='bilinear')  # 2 x 2 upsampling
 
-        self.upsample9 = upsample(in_planes=256, out_planes=128, scale=2,mode='bilinear')
         # 1/4
 
-        self.conv9a = conv(in_planes=256, out_planes=128, kernel_size=3)
-        self.conv9b = conv(in_planes=128, out_planes=128, kernel_size=3)
+        if self.cross_skip_connect and self.stage==2:
+            self.conv9a = conv(in_planes=384, out_planes=128, kernel_size=3)
+        else:
+            self.conv9a = conv(in_planes=256, out_planes=128, kernel_size=3)
+            
+        self.conv9b = conv(in_planes=128, out_planes=64, kernel_size=3)
 
         # # block 10
-        #
-        self.upsample10 = upsample(in_planes=128, out_planes=64, scale=2,mode='bilinear')
-        # 1/2
 
-        self.conv10a = conv(in_planes=128, out_planes=64, kernel_size=3)
-        self.conv10b = conv(in_planes=64, out_planes=64, kernel_size=3)
+        self.upsample10 = lambda x: F.upsample(x, size=(2 * x.shape[2], 2 * x.shape[3]), mode='bilinear')  # 2 x 2 upsampling
+        # 1/2
+        
+        if self.cross_skip_connect and self.stage==2:
+            self.conv10a = conv(in_planes=192, out_planes=64, kernel_size=3)
+        else:
+            self.conv10a = conv(in_planes=128, out_planes=64, kernel_size=3)
+        self.conv10b = conv(in_planes=64, out_planes=32, kernel_size=3)
 
         # block 11
 
-        self.upsample11 = upsample(in_planes=64, out_planes=32, scale=2,mode='bilinear')
+        self.upsample11 = lambda x: F.upsample(x, size=(2 * x.shape[2], 2 * x.shape[3]), mode='bilinear')  # 2 x 2 upsampling
         # 1
 
-        self.conv11a = conv(in_planes=64, out_planes=32, kernel_size=3)
+        if self.cross_skip_connect and self.stage==2:
+            self.conv11a = conv(in_planes=96, out_planes=32, kernel_size=3)
+        else:
+            self.conv11a = conv(in_planes=64, out_planes=32, kernel_size=3)
+            
         self.conv11b = conv(in_planes=32, out_planes=out_channels, kernel_size=3)
         
-    def forward(self, flowI_input):
+    def forward(self, flowI_input, stage1_encoder_outputs=None):
         """
         :param input_tensor: input: N,16, H, W,
         batch_size = N
+        :param stage1_encoder_outputs: if skip connection from stage1 goes to stage2.
 
         :return: output_tensor: N, 5, H, W, C
         interpolation result
 
         """
-
+        
         if self.verbose:
             log.info("Input: " + str(flowI_input.shape))
 
@@ -443,7 +465,10 @@ class UNetC(nn.Module):
             log.info("Output Block 6: "+str(conv6b_out.shape))
 
         upsample7_out = self.upsample7(conv6b_out)
-        conv7a_in = torch.cat([upsample7_out, conv5b_out], dim=1)
+        if self.cross_skip_connect and self.stage==2:
+            conv7a_in = torch.cat([upsample7_out, conv5b_out, stage1_encoder_outputs[-1]], dim=1)
+        else:
+            conv7a_in = torch.cat([upsample7_out, conv5b_out], dim=1)
         conv7a_out = self.conv7a(conv7a_in)
         conv7b_out = self.conv7b(conv7a_out)
 
@@ -451,7 +476,12 @@ class UNetC(nn.Module):
             log.info("Output Block 7: "+str(conv7b_out.shape))
 
         upsample8_out = self.upsample8(conv7b_out)
-        conv8a_in = torch.cat([upsample8_out, conv4b_out], dim=1)
+        
+        if self.cross_skip_connect and self.stage==2:
+            conv8a_in = torch.cat([upsample8_out, conv4b_out, stage1_encoder_outputs[-2]], dim=1)
+        else:
+            conv8a_in = torch.cat([upsample8_out, conv4b_out], dim=1)
+        
         conv8a_out = self.conv8a(conv8a_in)
         conv8b_out = self.conv8b(conv8a_out)
 
@@ -459,7 +489,11 @@ class UNetC(nn.Module):
             log.info("Output Block 8: "+str(conv8b_out.shape))
 
         upsample9_out = self.upsample9(conv8b_out)
-        conv9a_in = torch.cat([upsample9_out, conv3b_out], dim=1)
+        if self.cross_skip_connect and self.stage==2:
+            conv9a_in = torch.cat([upsample9_out, conv3b_out, stage1_encoder_outputs[-3]], dim=1)
+        else:
+            conv9a_in = torch.cat([upsample9_out, conv3b_out], dim=1)
+            
         conv9a_out = self.conv9a(conv9a_in)
         conv9b_out = self.conv9b(conv9a_out)
 
@@ -467,7 +501,11 @@ class UNetC(nn.Module):
             log.info("Output Block 9: "+str(conv9b_out.shape))
 
         upsample10_out = self.upsample10(conv9b_out)
-        conv10a_in = torch.cat([upsample10_out, conv2b_out], dim=1)
+        if self.cross_skip_connect and self.stage==2:
+            conv10a_in = torch.cat([upsample10_out, conv2b_out, stage1_encoder_outputs[-4]], dim=1)            
+        else:
+            conv10a_in = torch.cat([upsample10_out, conv2b_out], dim=1)
+            
         conv10a_out = self.conv10a(conv10a_in)
         conv10b_out = self.conv10b(conv10a_out)
         
@@ -475,15 +513,23 @@ class UNetC(nn.Module):
             log.info("Output Block 10: "+str(conv10b_out.shape))
         
         upsample11_out = self.upsample11(conv10b_out)
-        conv11a_in = torch.cat([upsample11_out, conv1b_out], dim=1)
+        
+        if self.cross_skip_connect and self.stage==2:
+            conv11a_in = torch.cat([upsample11_out, conv1b_out, stage1_encoder_outputs[-5]], dim=1)
+        else:
+            conv11a_in = torch.cat([upsample11_out, conv1b_out], dim=1)
+            
         conv11a_out = self.conv11a(conv11a_in)
         conv11b_out = self.conv11b(conv11a_out)
+        
         if self.verbose:
             log.info("Output Block 11: "+str(conv11b_out.shape))
-        
-        flowI_output = conv11b_out
-        
-        return flowI_output
+
+        if self.cross_skip_connect and self.stage==1:
+            encoder_outputs = [conv1b_out, conv2b_out, conv3b_out, conv4b_out, conv5b_out]
+            return encoder_outputs, conv11b_out
+        else:
+            return conv11b_out
 
     def compute_inputs(self, img_tensor, flow_pred_tensor, t):
         """
@@ -572,9 +618,8 @@ class UNetC(nn.Module):
         return pred_img_t
 
 
-def get_modelA(path, in_channels, out_channels, verbose=False):
-    log.info("Additive Skip Connections UNet.")
-    model = UNetA(in_channels, out_channels, verbose=verbose)
+def get_model(path, in_channels, out_channels, cross_skip, verbose=False, stage=1):
+    model = UNetC(in_channels, out_channels, cross_skip, verbose=verbose, stage=stage)
     if path is not None:
         data = torch.load(path)
         if 'stage1_state_dict' in data.keys() and out_channels==4:
@@ -591,36 +636,26 @@ def get_modelA(path, in_channels, out_channels, verbose=False):
         log.info("Not loading weights for UNET.")
     return model
 
-
-def get_modelC(path, in_channels, out_channels, verbose=False):
-    log.info("Concatenative Skip Connections UNet.")
-    model = UNetC(in_channels, out_channels, verbose=verbose)
-    if path is not None:
-        data = torch.load(path)
-        if 'stage1_state_dict' in data.keys() and out_channels==4:
-            log.info("Loading Stage 1 UNet.")
-            model.load_state_dict(data['stage1_state_dict'])
-            log.info("Loaded weights for Flow Computation: "+str(path))
-        elif 'stage2_state_dict' in data.keys() and out_channels==5:
-            log.info("Loading Stage 2 UNet.")
-            model.load_state_dict(data['stage2_state_dict'])
-            log.info("Loaded weights for Flow Interpolation: "+str(path))
-        else:
-            model.load_state_dict(data)
-    else:
-        log.info("Not loading weights for UNET.")
-    return model
 
 
 if __name__=='__main__':
-
     logging.basicConfig(filename="test.log", level=logging.INFO)
 
-    model = get_modelC(path=None, in_channels=16, out_channels=5, verbose=True)
+    model = get_model(path=None, in_channels=16, out_channels=11, verbose=True)
     model = model.cuda()
 
     input_sample = Variable(torch.randn([1, 16, 320, 640])).cuda()
     output_sample = model(input_sample)
+
+    # gt_sample = Variable(torch.randn([1, 3, 320, 640])).cuda()
+
+    # loss_weights = (0.5, 0.6, 1, 1)
+    # img_tensor = Variable(torch.randn([1, 6, 320, 640])).cuda()
+    # flow_tensor = Variable(torch.randn([1, 4, 320, 640])).cuda()
+
+    # test, _ = model.compute_interpolation_losses(img_tensor, flow_tensor, input_sample, output_sample,
+    #                                              target_image=gt_sample, loss_weights=loss_weights, t=0.5)
+    # test.backward()
 
 
 ##########################################
