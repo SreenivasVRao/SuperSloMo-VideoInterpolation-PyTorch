@@ -22,7 +22,7 @@ class Reader(Dataset):
         self.compute_scale_factors()
         self.clips = self.read_clip_list(split)
         self.split = split
-        log.info(split+ ": Extracted clip list.")
+        # log.info(split+ ": Extracted clip list.")
 
     def read_clip_list(self, split):
         """
@@ -249,7 +249,7 @@ def data_generator(config, split, eval=False):
 
     if eval:
         custom_transform = transforms.Compose([ResizeCrop(), ToTensor()])
-        t_sample = "FIXED"
+        t_sample = "RANDOM"
     else:
         custom_transform = transforms.Compose([AugmentData(), ResizeCrop(), ToTensor()])
         t_sample = config.get("MISC", "T_SAMPLE")

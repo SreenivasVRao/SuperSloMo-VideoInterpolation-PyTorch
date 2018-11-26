@@ -1,4 +1,4 @@
-from SuperSloMo.models import SSM
+from SuperSloMo.models import SSM, SSMLoss
 from SuperSloMo.utils import adobe_240fps, metrics_v2
 import numpy as np,  random
 import torch.optim
@@ -37,11 +37,18 @@ class SSMNet:
         self.writer = SummaryWriter(os.path.join(log_dir, self.expt_name, "plots"))
         self.get_hyperparams()
 
-        self.superslomo = SSM.full_model(self.cfg, self.writer).cuda()
+        self.superslomo = SSM.full_model(self.cfg, self.writer)
+        
         if torch.cuda.device_count()>1:
+            log.info("Found %s GPUS. Using DataParallel."%torch.cuda.device_count())
             self.superslomo = torch.nn.DataParallel(self.superslomo)
         else:
             log.warning("GPUs found: "+str(torch.cuda.device_count()))
+            
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        log.info("Device: %s"%device)
+        self.superslomo.to(device)
+        self.loss_module = SSMLoss.get_loss(config).cuda()
 
     def get_hyperparams(self):
         """
@@ -53,7 +60,6 @@ class SSMNet:
         self.learning_rate = self.cfg.getfloat("TRAIN", "LEARNING_RATE")
         self.lr_decay = self.cfg.getfloat("TRAIN", "LR_DECAY")
         self.lr_period = self.cfg.getfloat("TRAIN", "LR_PERIOD")
-
         self.t_interp = self.cfg.getfloat("TRAIN", "T_INTERP")
         self.save_every= self.cfg.getint("TRAIN", "SAVE_EVERY")
 
@@ -92,14 +98,22 @@ class SSMNet:
         t_interp = float(t_idx)/8
 
         if not get_interpolation:
-            loss_buffer = torch.autograd.Variable(torch.from_numpy(np.zeros([1, 4]))).float().cuda(1)
-            losses = self.superslomo(img_0, img_1, dataset_info, t_interp, img_t, loss_buffer, split, iteration)[0,:]
-            # log.info("Completed forward pass.")
+            # loss_buffer = torch.autograd.Variable(torch.from_numpy(np.zeros([1, 4]))).float().cuda()
+            # log.info("Here %s"%loss_buffer.get_device())
+            # losses = self.superslomo(img_0, img_1, dataset_info, t_interp, img_t, loss_buffer, split, iteration)#[0,:]
+
+            # output_tensors = self.superslomo(img_0, img_1, dataset_info, t_interp, split=split, iteration=iteration)
+            # losses = self.loss_module(*output_tensors, target_image=img_t)
+            losses = self.superslomo(img_0, img_1, dataset_info, t_interp, split=split, iteration=iteration, target_image=img_t)
+            losses = losses.mean(dim=0) # averages the loss over the batch. Horrific code. [B, 4] -> [4]
             self.write_losses(losses, iteration, split)
             total_loss = losses[0]
             return total_loss
+
         else:
-            interpolation_result  = self.superslomo(img_0, img_1, dataset_info, t_interp, split=split, iteration=iteration)
+            if iteration==1:
+                log.info("Getting only Interpolation Result.")
+            interpolation_result = self.superslomo(img_0, img_1, dataset_info, t_interp, split=split, iteration=iteration)
             return interpolation_result, img_t
 
     def train(self):
@@ -108,9 +122,10 @@ class SSMNet:
 
         :return:
         """
-        optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.superslomo.parameters()),  lr=self.learning_rate)
+        optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.superslomo.parameters()),
+                                     lr=self.learning_rate)
         lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=self.lr_period, gamma=self.lr_decay)
-        iteration = 1
+        iteration = 0
 
         train_info = adobe_240fps.get_data_info(self.cfg, split="TRAIN")
         val_info = adobe_240fps.get_data_info(self.cfg, split="VAL")
@@ -124,6 +139,8 @@ class SSMNet:
             for train_batch in adobe_train_samples:
                 iteration +=1
                 data_batch, t_idx = train_batch
+                if data_batch.shape[0]<torch.cuda.device_count():
+                    continue
                 
                 train_loss = self.forward_pass(data_batch, train_info, "TRAIN", iteration, t_idx)
 
@@ -137,15 +154,10 @@ class SSMNet:
                     val_batch = next(adobe_val_samples)
 
                 data_batch, t_idx = val_batch
+                if data_batch.shape[0]<torch.cuda.device_count():
+                    continue
+                
                 self.forward_pass(data_batch, val_info, "VAL", iteration, t_idx)
-                # if iteration<=401: # 400 iterations in total 
-                #     for param_group in optimizer.param_groups:
-                #         param_group['lr'] = 1e-4 + iteration * 1e-6
-                #         self.writer.add_scalars("Learning_Rate", {"TRAIN": param_group["lr"]}, iteration)
-            # if epoch==self.lr_period:
-            #     for param_group in optimizer.param_groups:
-            #         param_group['lr'] *= self.lr_decay
-            #         log.info("Learning rate after 200 epochs: %s"%param_group["lr"])
                     
             log.info("Epoch: "+str(epoch)+" Iteration: "+str(iteration))
 
@@ -162,7 +174,8 @@ class SSMNet:
                     'scheduler': lr_scheduler.state_dict()
                 }
 
-                fpath = os.path.join(self.cfg.get("PROJECT", "DIR"), "logs", self.expt_name, "checkpoints", self.expt_name+"_EPOCH_"+str(epoch).zfill(4)+".pt")
+                fpath = os.path.join(self.cfg.get("PROJECT", "DIR"), "logs", self.expt_name, "checkpoints",
+                                     self.expt_name+"_EPOCH_"+str(epoch).zfill(4)+".pt")
 
                 torch.save(state, fpath)
 

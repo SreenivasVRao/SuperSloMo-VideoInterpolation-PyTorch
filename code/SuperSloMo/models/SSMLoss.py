@@ -15,7 +15,7 @@ class PerceptualLoss(nn.Module):
         super(PerceptualLoss, self).__init__()
         self.vgg16 = torchvision.models.vgg16(pretrained=True)
 
-        self.l2_loss = nn.MSELoss()
+        self.l2_loss = nn.MSELoss(reduce=False)
 
         vgg16_mean = np.asarray([0.485, 0.456, 0.406])[None, :, None, None]
         vgg16_std = np.asarray([0.229, 0.224, 0.225])[None, :, None, None]
@@ -34,7 +34,8 @@ class PerceptualLoss(nn.Module):
             param.requires_grad = False
         for param in self.parameters():
             param.requires_grad = False
-        self.modulelist = list(self.vgg16.features.modules())[1:24] # until relu(conv4_3)
+        # self.modulelist = list(self.vgg16.features.modules())[1:24] # until relu(conv4_3)
+        self.vgg_conv4_3 = self.vgg16.features[:23]
 
     def rescale(self, tensor):
         """
@@ -57,11 +58,12 @@ class PerceptualLoss(nn.Module):
     def forward(self, x_input, x_target):
         # x_input = self.rescale(x_input)
         # x_target = self.rescale(x_target)
-        for aLayer in self.modulelist: # until conv4_3
-            x_input = aLayer(x_input)
-            x_target = aLayer(x_target)
+        # for aLayer in self.modulelist: # until conv4_3
+        #     x_input = aLayer(x_input)
+        #     x_target = aLayer(x_target)
+        x_input = self.vgg_conv4_3(x_input)
+        x_target = self.vgg_conv4_3(x_target)
         perceptual_loss = self.l2_loss(x_input, x_target)
-
         return perceptual_loss
 
 
@@ -125,16 +127,16 @@ class SSMLosses(nn.Module):
     def __init__(self, cfg):
         super(SSMLosses, self).__init__()
 
-        self.reconstr_loss_fn = nn.L1Loss()
+        self.reconstr_loss_fn = nn.L1Loss(reduce=False)
 
         self.perceptual_loss_fn = PerceptualLoss()
         self.smooth_loss_1 = SmoothnessLoss()
         self.smooth_loss_2 = SmoothnessLoss()
         self.cfg = cfg
-        self.warp_loss_1 = nn.L1Loss()
-        self.warp_loss_2 = nn.L1Loss()
-        self.warp_loss_3 = nn.L1Loss()
-        self.warp_loss_4 = nn.L1Loss()
+        self.warp_loss_1 = nn.L1Loss(reduce=False)
+        self.warp_loss_2 = nn.L1Loss(reduce=False)
+        self.warp_loss_3 = nn.L1Loss(reduce=False)
+        self.warp_loss_4 = nn.L1Loss(reduce=False)
         self.loss_weights = self.read_loss_weights(cfg)
         self.squash = nn.Sigmoid()
 
@@ -200,6 +202,16 @@ class SSMLosses(nn.Module):
     def get_perceptual_loss(self, img, target_img):
         return self.perceptual_loss_fn(img, target_img)
 
+    def get_batch_mean(self, loss_tensor):
+        """
+        :param loss_tensor = B, C, H, W tensor.
+        :return batch_mean = B, 1 tensor. The mean loss for each sample as B, 1 tensor.
+        """
+        loss_tensor = loss_tensor.contiguous().view(loss_tensor.shape[0], -1)
+        batch_mean = loss_tensor.mean(dim=1)[:, None]
+        return batch_mean
+    
+
     def forward(self, flowC_input, flowC_output, flowI_input, flowI_output, interpolated_image, target_image):
         lambda_r, lambda_p, lambda_w, lambda_s = self.loss_weights
 
@@ -207,16 +219,28 @@ class SSMLosses(nn.Module):
         loss_perceptual =lambda_p * self.get_perceptual_loss(interpolated_image*255.0, target_image*255.0)
         loss_warp = lambda_w * self.get_warp_loss(flowC_input, flowC_output, flowI_input, flowI_output, target_image)*255.0
 
-        total_loss =  loss_reconstr +  loss_warp +  loss_perceptual
-        total_loss = total_loss/float(torch.cuda.device_count())
+        loss_reconstr = loss_reconstr.view(loss_reconstr.shape[0], -1).mean(dim=1)[:, None]
+        loss_perceptual = loss_perceptual.view(loss_perceptual.shape[0], -1).mean(dim=1)[:, None]
+        loss_warp = loss_warp.view(loss_warp.shape[0], -1).mean(dim=1)[:, None]
+
+        loss_reconstr = self.get_batch_mean(loss_reconstr)
+        loss_warp = self.get_batch_mean(loss_warp)
+        loss_perceptual = self.get_batch_mean(loss_perceptual)
         
-        """
-        Loss is averaged on each GPU. So combining across 4 GPUs, we need to average it.
-        """
+        # gets a [B, 1] with mean loss over each sample tensor
+        # need this because I'm using multi-gpu, and need to accumulate the loss over samples. Such bad code :/
+        
+        total_loss =  loss_reconstr +  loss_warp +  loss_perceptual
+        # total_loss = total_loss/float(torch.cuda.device_count())
+        
+        # """
+        # Loss is averaged on each GPU. So combining across 4 GPUs, we need to average it.
+        # """
         
         loss_list = [total_loss, loss_reconstr, loss_warp, loss_perceptual]
 
         loss_tensor = torch.stack(loss_list).squeeze()
+        loss_tensor = loss_tensor.permute(1,0) # [B, 4] for 4 losses
         return loss_tensor
 
 

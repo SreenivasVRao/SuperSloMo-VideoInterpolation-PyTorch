@@ -41,11 +41,13 @@ class FullModel(nn.Module):
         elif self.cfg.get("STAGE1", "MODEL") in ["UNET", "UNETC", "UNETA"]:
             log.info("STAGE 1 %s"%self.cfg.get("STAGE1", "MODEL"))
             
-            self.stage1_model = UNetFlow.get_model(stage1_weights, in_channels=6, out_channels=4, cross_skip=self.cross_skip, stage=1)
+            self.stage1_model = UNetFlow.get_model(stage1_weights, in_channels=6, out_channels=4,
+                                                   cross_skip=self.cross_skip, stage=1)
             
         # Flow Computation Model
         log.info("STAGE 2 %s"%self.cfg.get("STAGE2", "MODEL"))
-        self.stage2_model = UNetFlow.get_model(stage2_weights, in_channels=16, out_channels=5, cross_skip=self.cross_skip, stage=2)
+        self.stage2_model = UNetFlow.get_model(stage2_weights, in_channels=16, out_channels=5,
+                                               cross_skip=self.cross_skip, stage=2)
         # Flow Interpolation Model
 
         if self.cross_skip:
@@ -117,10 +119,10 @@ class FullModel(nn.Module):
 
         return upsampled_flow
 
-    def forward(self, image_0, image_1, dataset_info, t_interp, target_image=None, output_buffer=None, split=None, iteration=None):
-
-        img_tensor, flowC_out = self.stage1_computations(image_0, image_1, dataset_info)
+    def forward(self, image_0, image_1, dataset_info, t_interp, target_image=None,
+                output_buffer=None, split=None, iteration=None):
         
+        img_tensor, flowC_out = self.stage1_computations(image_0, image_1, dataset_info)
         if self.cross_skip:
             encoder_out, flow_tensor = flowC_out
         else:
@@ -128,21 +130,34 @@ class FullModel(nn.Module):
             encoder_out = None
 
         flowI_input = self.stage2_model.compute_inputs(img_tensor, flow_tensor, t=t_interp)
-
         flowI_output = self.stage2_model(flowI_input, encoder_out)
-    
-        interpolation_result = self.stage2_model.compute_output_image(img_tensor, flowI_input, flowI_output, t=t_interp)
-
+        interpolation_result = self.stage2_model.compute_output_image(img_tensor, flowI_input,
+                                                                      flowI_output, t=t_interp)
+        
         if iteration % 100 == 0:
             self.writer.add_image(split, interpolation_result[0, [2,1,0], ...], iteration)
-            
-        if output_buffer is not None:
-            losses = self.loss(img_tensor, flow_tensor, flowI_input, flowI_output, interpolation_result, target_image)
-            output_buffer[0, :] += losses
 
-            return output_buffer
-        else:
-            return interpolation_result
+        if target_image:
+            losses = self.loss(img_tensor, flow_tensor, flowI_input, flowI_output, interpolation_result, target_image)
+            return losses
+        
+        
+        # if output_buffer is not None:
+        #     log.info("flow_tensor device: %s"%flow_tensor.get_device())
+        #     log.info("flowI_output device: %s"%flowI_output.get_device())
+        #     log.info(flow_tensor.shape)
+        #     losses = self.loss(img_tensor, flow_tensor, flowI_input, flowI_output, interpolation_result, target_image)
+        #     log.info("Inside: Loss Shape: ")
+        #     log.info(losses.shape)
+        #     return losses
+        # output_buffer[0,:] += losses
+        # output_buffer[0, 4] += 1
+        # output_buffer.append(losses)
+        # log.info("Length %s"%len(output_buffer))
+        # log.info("Loss device: %s"%output_buffer.get_device())
+        # return output_buffer
+        # else:
+        return interpolation_result
 
         
 def full_model(config, writer):

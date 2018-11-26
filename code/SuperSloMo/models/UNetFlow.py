@@ -351,6 +351,7 @@ class UNetC(nn.Module):
         # block 7
 
         self.upsample7 = lambda x: F.upsample(x, size=(2 * x.shape[2], 2 * x.shape[3]), mode='bilinear')  # 2 x 2 upsampling
+        # self.upsample7 = upsample(in_planes=512, out_planes=512)  # 2 x 2 upsampling
         
         # 1/16
 
@@ -363,6 +364,7 @@ class UNetC(nn.Module):
         # block 8
 
         self.upsample8 = lambda x: F.upsample(x, size=(2 * x.shape[2], 2 * x.shape[3]), mode='bilinear')  # 2 x 2 upsampling
+        # self.upsample8 = upsample(in_planes=512, out_planes=256)  # 2 x 2 upsampling
         
         # 1/8
 
@@ -376,6 +378,7 @@ class UNetC(nn.Module):
 
         # block 9
         self.upsample9 = lambda x: F.upsample(x, size=(2 * x.shape[2], 2 * x.shape[3]), mode='bilinear')  # 2 x 2 upsampling
+        # self.upsample9 = upsample(in_planes=256, out_planes=128)  # 2 x 2 upsampling
 
         # 1/4
 
@@ -389,6 +392,8 @@ class UNetC(nn.Module):
         # # block 10
 
         self.upsample10 = lambda x: F.upsample(x, size=(2 * x.shape[2], 2 * x.shape[3]), mode='bilinear')  # 2 x 2 upsampling
+        # self.upsample10 = upsample(in_planes=128, out_planes=64)  # 2 x 2 upsampling
+        
         # 1/2
         
         if self.cross_skip_connect and self.stage==2:
@@ -401,13 +406,20 @@ class UNetC(nn.Module):
 
         self.upsample11 = lambda x: F.upsample(x, size=(2 * x.shape[2], 2 * x.shape[3]), mode='bilinear')  # 2 x 2 upsampling
         # 1
+        # self.upsample11 = upsample(in_planes=64, out_planes=32)  # 2 x 2 upsampling
+        
 
         if self.cross_skip_connect and self.stage==2:
             self.conv11a = conv(in_planes=96, out_planes=32, kernel_size=3)
         else:
             self.conv11a = conv(in_planes=64, out_planes=32, kernel_size=3)
             
-        self.conv11b = conv(in_planes=32, out_planes=out_channels, kernel_size=3)
+        # self.conv11b = conv(in_planes=32, out_planes=out_channels, kernel_size=3) # WHAT A DUMBASS.
+        
+        self.conv11b = conv(in_planes=32, out_planes=32, kernel_size=3)
+        
+        self.final_conv = nn.Conv2d(in_channels=32, out_channels=out_channels, kernel_size=3, stride=1, padding=1, dilation=1, bias=True)
+        
         
     def forward(self, flowI_input, stage1_encoder_outputs=None):
         """
@@ -474,7 +486,6 @@ class UNetC(nn.Module):
 
         if self.verbose:
             log.info("Output Block 7: "+str(conv7b_out.shape))
-
         upsample8_out = self.upsample8(conv7b_out)
         
         if self.cross_skip_connect and self.stage==2:
@@ -522,14 +533,16 @@ class UNetC(nn.Module):
         conv11a_out = self.conv11a(conv11a_in)
         conv11b_out = self.conv11b(conv11a_out)
         
+        final_out = self.final_conv(conv11b_out)
+        
         if self.verbose:
             log.info("Output Block 11: "+str(conv11b_out.shape))
 
         if self.cross_skip_connect and self.stage==1:
             encoder_outputs = [conv1b_out, conv2b_out, conv3b_out, conv4b_out, conv5b_out]
-            return encoder_outputs, conv11b_out
+            return encoder_outputs, final_out
         else:
-            return conv11b_out
+            return final_out
 
     def compute_inputs(self, img_tensor, flow_pred_tensor, t):
         """
