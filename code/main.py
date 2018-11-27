@@ -244,12 +244,12 @@ if __name__ == '__main__':
 
     ssm_net = SSMNet(cfg, args.expt, args.msg)
 
-    ssm_net.train()
+    # ssm_net.train()
 
-    log.info("Training complete.")
-    # log.info("Evaluating metrics.")
+    # log.info("Training complete.")
+    log.info("Evaluating metrics.")
 
-    # ssm_net.superslomo.eval()
+    ssm_net.superslomo.eval()
 
     # adobe_train = adobe_240fps.data_generator(cfg, split="TRAIN", eval=True)
     # train_info = adobe_240fps.get_data_info(cfg, split="TRAIN")
@@ -257,11 +257,11 @@ if __name__ == '__main__':
     # PSNR, IE, SSIM = ssm_net.compute_metrics(adobe_train, train_info, "TRAIN")
     # logging.info("ADOBE TRAIN: Average PSNR %.3f IE %.3f SSIM %.3f"%(PSNR, IE, SSIM))
 
-    # adobe_val = adobe_240fps.data_generator(cfg, split="VAL", eval=True)
-    # val_info = adobe_240fps.get_data_info(cfg, split="VAL")
+    adobe_val = adobe_240fps.data_generator(cfg, split="VAL", eval=True)
+    val_info = adobe_240fps.get_data_info(cfg, split="VAL")
     
-    # PSNR, IE, SSIM = ssm_net.compute_metrics(adobe_val, val_info, "VAL")
-    # logging.info("ADOBE VAL: Average PSNR %.3f IE %.3f SSIM %.3f"%(PSNR, IE, SSIM))
+    PSNR, IE, SSIM = ssm_net.compute_metrics(adobe_val, val_info, "VAL")
+    logging.info("ADOBE VAL: Average PSNR %.3f IE %.3f SSIM %.3f"%(PSNR, IE, SSIM))
     
 
 ##################################################

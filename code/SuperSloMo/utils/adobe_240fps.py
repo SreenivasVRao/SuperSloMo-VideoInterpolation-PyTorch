@@ -249,7 +249,7 @@ def data_generator(config, split, eval=False):
 
     if eval:
         custom_transform = transforms.Compose([ResizeCrop(), ToTensor()])
-        t_sample = "RANDOM"
+        t_sample = "NIL"
     else:
         custom_transform = transforms.Compose([AugmentData(), ResizeCrop(), ToTensor()])
         t_sample = config.get("MISC", "T_SAMPLE")
