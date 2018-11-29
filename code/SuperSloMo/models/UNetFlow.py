@@ -6,7 +6,11 @@ import logging
 
 log = logging.getLogger(__name__)
 
-class UNet(nn.Module):
+##########################################
+# Additive Skip connections UNet module. #
+##########################################
+
+class UNetA(nn.Module):
 
     def __init__(self, in_channels, out_channels, cross_skip, verbose=False):
         super(UNet, self).__init__()
@@ -17,7 +21,6 @@ class UNet(nn.Module):
 
     def build_model(self, in_channels, out_channels):
         """
-
         :param in_channels: Number of channels for input tensor.
         :param out_channels: Number of channels for output tensor.
         :return:
@@ -293,6 +296,11 @@ class UNet(nn.Module):
         return pred_img_t
 
 
+
+###############################################
+# Concatenative Skip connections UNet module. #
+###############################################
+    
 class UNetC(nn.Module):
 
     def __init__(self, in_channels, out_channels, cross_skip, verbose=False, stage=-1):
@@ -307,7 +315,6 @@ class UNetC(nn.Module):
 
     def build_model(self, in_channels, out_channels):
         """
-
         :param in_channels: Number of channels for input tensor.
         :param out_channels: Number of channels for output tensor.
         :return:
@@ -351,7 +358,6 @@ class UNetC(nn.Module):
         # block 7
 
         self.upsample7 = lambda x: F.upsample(x, size=(2 * x.shape[2], 2 * x.shape[3]), mode='bilinear')  # 2 x 2 upsampling
-        # self.upsample7 = upsample(in_planes=512, out_planes=512)  # 2 x 2 upsampling
         
         # 1/16
 
@@ -359,73 +365,51 @@ class UNetC(nn.Module):
             self.conv7a = conv(in_planes=1536, out_planes=512,kernel_size=3)
         else:
             self.conv7a = conv(in_planes=1024, out_planes=512,kernel_size=3)
-        self.conv7b = conv(in_planes=512, out_planes=256, kernel_size=3)
+        self.conv7b = conv(in_planes=512, out_planes=512, kernel_size=3)
 
         # block 8
 
         self.upsample8 = lambda x: F.upsample(x, size=(2 * x.shape[2], 2 * x.shape[3]), mode='bilinear')  # 2 x 2 upsampling
-        # self.upsample8 = upsample(in_planes=512, out_planes=256)  # 2 x 2 upsampling
         
         # 1/8
 
-        if self.cross_skip_connect and self.stage==2:
-            self.conv8a = conv(in_planes=768, out_planes=256, kernel_size=3)
-        else:
-            self.conv8a = conv(in_planes=512, out_planes=256, kernel_size=3)
-            
-        self.conv8b = conv(in_planes=256, out_planes=128, kernel_size=3)
+        self.conv8a = conv(in_planes=768, out_planes=256, kernel_size=3)
+        self.conv8b = conv(in_planes=256, out_planes=256, kernel_size=3)
 
 
         # block 9
         self.upsample9 = lambda x: F.upsample(x, size=(2 * x.shape[2], 2 * x.shape[3]), mode='bilinear')  # 2 x 2 upsampling
-        # self.upsample9 = upsample(in_planes=256, out_planes=128)  # 2 x 2 upsampling
 
         # 1/4
 
-        if self.cross_skip_connect and self.stage==2:
-            self.conv9a = conv(in_planes=384, out_planes=128, kernel_size=3)
-        else:
-            self.conv9a = conv(in_planes=256, out_planes=128, kernel_size=3)
-            
-        self.conv9b = conv(in_planes=128, out_planes=64, kernel_size=3)
+        self.conv9a = conv(in_planes=384, out_planes=128, kernel_size=3)
+        self.conv9b = conv(in_planes=128, out_planes=128, kernel_size=3)
 
         # # block 10
 
         self.upsample10 = lambda x: F.upsample(x, size=(2 * x.shape[2], 2 * x.shape[3]), mode='bilinear')  # 2 x 2 upsampling
-        # self.upsample10 = upsample(in_planes=128, out_planes=64)  # 2 x 2 upsampling
         
         # 1/2
         
-        if self.cross_skip_connect and self.stage==2:
-            self.conv10a = conv(in_planes=192, out_planes=64, kernel_size=3)
-        else:
-            self.conv10a = conv(in_planes=128, out_planes=64, kernel_size=3)
-        self.conv10b = conv(in_planes=64, out_planes=32, kernel_size=3)
+        self.conv10a = conv(in_planes=192, out_planes=64, kernel_size=3)
+        self.conv10b = conv(in_planes=64, out_planes=64, kernel_size=3)
 
         # block 11
 
         self.upsample11 = lambda x: F.upsample(x, size=(2 * x.shape[2], 2 * x.shape[3]), mode='bilinear')  # 2 x 2 upsampling
-        # 1
-        # self.upsample11 = upsample(in_planes=64, out_planes=32)  # 2 x 2 upsampling
-        
+        # 1        
 
-        if self.cross_skip_connect and self.stage==2:
-            self.conv11a = conv(in_planes=96, out_planes=32, kernel_size=3)
-        else:
-            self.conv11a = conv(in_planes=64, out_planes=32, kernel_size=3)
-            
-        # self.conv11b = conv(in_planes=32, out_planes=out_channels, kernel_size=3) # WHAT A DUMBASS.
-        
+        self.conv11a = conv(in_planes=96, out_planes=32, kernel_size=3)            
         self.conv11b = conv(in_planes=32, out_planes=32, kernel_size=3)
         
         self.final_conv = nn.Conv2d(in_channels=32, out_channels=out_channels, kernel_size=3, stride=1, padding=1, dilation=1, bias=True)
         
         
-    def forward(self, flowI_input, stage1_encoder_outputs=None):
+    def forward(self, flowI_input, stage1_encoder_output=None):
         """
         :param input_tensor: input: N,16, H, W,
         batch_size = N
-        :param stage1_encoder_outputs: if skip connection from stage1 goes to stage2.
+        :param stage1_encoder_output: if skip connection from stage1 goes to stage2.
 
         :return: output_tensor: N, 5, H, W, C
         interpolation result
@@ -476,35 +460,38 @@ class UNetC(nn.Module):
         if self.verbose:
             log.info("Output Block 6: "+str(conv6b_out.shape))
 
-        upsample7_out = self.upsample7(conv6b_out)
         if self.cross_skip_connect and self.stage==2:
-            conv7a_in = torch.cat([upsample7_out, conv5b_out, stage1_encoder_outputs[-1]], dim=1)
-        else:
+            concat_out = torch.cat([conv6b_out, stage1_encoder_output], dim=1)
+            # concatenate encoder outputs
+            
+            upsample7_out = self.upsample7(concat_out)
+            #upsample everything
+            
             conv7a_in = torch.cat([upsample7_out, conv5b_out], dim=1)
+            # skip connection in stage2.
+            
+        else: # only upsample and concatenate.
+            upsample7_out = self.upsample7(conv6b_out)
+            conv7a_in = torch.cat([upsample7_out, conv5b_out], dim=1)
+            
         conv7a_out = self.conv7a(conv7a_in)
         conv7b_out = self.conv7b(conv7a_out)
 
         if self.verbose:
             log.info("Output Block 7: "+str(conv7b_out.shape))
+            
         upsample8_out = self.upsample8(conv7b_out)
         
-        if self.cross_skip_connect and self.stage==2:
-            conv8a_in = torch.cat([upsample8_out, conv4b_out, stage1_encoder_outputs[-2]], dim=1)
-        else:
-            conv8a_in = torch.cat([upsample8_out, conv4b_out], dim=1)
-        
+        conv8a_in = torch.cat([upsample8_out, conv4b_out], dim=1)
         conv8a_out = self.conv8a(conv8a_in)
         conv8b_out = self.conv8b(conv8a_out)
 
         if self.verbose:
             log.info("Output Block 8: "+str(conv8b_out.shape))
-
-        upsample9_out = self.upsample9(conv8b_out)
-        if self.cross_skip_connect and self.stage==2:
-            conv9a_in = torch.cat([upsample9_out, conv3b_out, stage1_encoder_outputs[-3]], dim=1)
-        else:
-            conv9a_in = torch.cat([upsample9_out, conv3b_out], dim=1)
             
+        upsample9_out = self.upsample8(conv8b_out)
+
+        conv9a_in = torch.cat([upsample9_out, conv3b_out], dim=1)
         conv9a_out = self.conv9a(conv9a_in)
         conv9b_out = self.conv9b(conv9a_out)
 
@@ -512,11 +499,7 @@ class UNetC(nn.Module):
             log.info("Output Block 9: "+str(conv9b_out.shape))
 
         upsample10_out = self.upsample10(conv9b_out)
-        if self.cross_skip_connect and self.stage==2:
-            conv10a_in = torch.cat([upsample10_out, conv2b_out, stage1_encoder_outputs[-4]], dim=1)            
-        else:
-            conv10a_in = torch.cat([upsample10_out, conv2b_out], dim=1)
-            
+        conv10a_in = torch.cat([upsample10_out, conv2b_out], dim=1)
         conv10a_out = self.conv10a(conv10a_in)
         conv10b_out = self.conv10b(conv10a_out)
         
@@ -525,22 +508,18 @@ class UNetC(nn.Module):
         
         upsample11_out = self.upsample11(conv10b_out)
         
-        if self.cross_skip_connect and self.stage==2:
-            conv11a_in = torch.cat([upsample11_out, conv1b_out, stage1_encoder_outputs[-5]], dim=1)
-        else:
-            conv11a_in = torch.cat([upsample11_out, conv1b_out], dim=1)
-            
+        conv11a_in = torch.cat([upsample11_out, conv1b_out], dim=1)    
         conv11a_out = self.conv11a(conv11a_in)
         conv11b_out = self.conv11b(conv11a_out)
         
         final_out = self.final_conv(conv11b_out)
         
         if self.verbose:
-            log.info("Output Block 11: "+str(conv11b_out.shape))
+            log.info("Output Block 11: "+str(final_out.shape))
 
         if self.cross_skip_connect and self.stage==1:
-            encoder_outputs = [conv1b_out, conv2b_out, conv3b_out, conv4b_out, conv5b_out]
-            return encoder_outputs, final_out
+            encoder_output = conv6b_out
+            return encoder_output, final_out
         else:
             return final_out
 
@@ -654,22 +633,19 @@ def get_model(path, in_channels, out_channels, cross_skip, verbose=False, stage=
 if __name__=='__main__':
     logging.basicConfig(filename="test.log", level=logging.INFO)
 
-    model = get_model(path=None, in_channels=16, out_channels=11, verbose=True)
-    model = model.cuda()
+    flowC_model = get_model(path=None, in_channels=6, out_channels=4, cross_skip = True, verbose=True, stage=1)
+    flowI_model = get_model(path=None, in_channels=16, out_channels=5, cross_skip = True, verbose=True, stage=2)
 
-    input_sample = Variable(torch.randn([1, 16, 320, 640])).cuda()
-    output_sample = model(input_sample)
+    
+    flowC_model = flowC_model.cuda()
+    flowI_model = flowI_model.cuda()
 
-    # gt_sample = Variable(torch.randn([1, 3, 320, 640])).cuda()
-
-    # loss_weights = (0.5, 0.6, 1, 1)
-    # img_tensor = Variable(torch.randn([1, 6, 320, 640])).cuda()
-    # flow_tensor = Variable(torch.randn([1, 4, 320, 640])).cuda()
-
-    # test, _ = model.compute_interpolation_losses(img_tensor, flow_tensor, input_sample, output_sample,
-    #                                              target_image=gt_sample, loss_weights=loss_weights, t=0.5)
-    # test.backward()
-
+    stage1_input = Variable(torch.randn([1, 6, 320, 640])).cuda()
+    encoder_out, flow_tensor = flowC_model(stage1_input)
+    log.info("Encoder: "+ str(encoder_out.shape))
+    stage2_input = Variable(torch.randn([1, 16, 320, 640])).cuda()
+    stage2_out = flowI_model(stage2_input, encoder_out)
+    logging.info("Done.")
 
 ##########################################
 # // And all you touch and all you see,//#

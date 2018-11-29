@@ -141,22 +141,6 @@ class FullModel(nn.Module):
             losses = self.loss(img_tensor, flow_tensor, flowI_input, flowI_output, interpolation_result, target_image)
             return losses
         
-        
-        # if output_buffer is not None:
-        #     log.info("flow_tensor device: %s"%flow_tensor.get_device())
-        #     log.info("flowI_output device: %s"%flowI_output.get_device())
-        #     log.info(flow_tensor.shape)
-        #     losses = self.loss(img_tensor, flow_tensor, flowI_input, flowI_output, interpolation_result, target_image)
-        #     log.info("Inside: Loss Shape: ")
-        #     log.info(losses.shape)
-        #     return losses
-        # output_buffer[0,:] += losses
-        # output_buffer[0, 4] += 1
-        # output_buffer.append(losses)
-        # log.info("Length %s"%len(output_buffer))
-        # log.info("Loss device: %s"%output_buffer.get_device())
-        # return output_buffer
-        # else:
         return interpolation_result
 
         
