@@ -362,9 +362,9 @@ class UNetC(nn.Module):
         # 1/16
 
         if self.cross_skip_connect and self.stage==2:
-            self.conv7a = conv(in_planes=1536, out_planes=512,kernel_size=3)
-        else:
             self.conv7a = conv(in_planes=1024, out_planes=512,kernel_size=3)
+        else:
+            self.conv7a = conv(in_planes=512, out_planes=512,kernel_size=3)
         self.conv7b = conv(in_planes=512, out_planes=512, kernel_size=3)
 
         # block 8
@@ -373,7 +373,7 @@ class UNetC(nn.Module):
         
         # 1/8
 
-        self.conv8a = conv(in_planes=768, out_planes=256, kernel_size=3)
+        self.conv8a = conv(in_planes=1024, out_planes=256, kernel_size=3)
         self.conv8b = conv(in_planes=256, out_planes=256, kernel_size=3)
 
 
@@ -382,7 +382,7 @@ class UNetC(nn.Module):
 
         # 1/4
 
-        self.conv9a = conv(in_planes=384, out_planes=128, kernel_size=3)
+        self.conv9a = conv(in_planes=512, out_planes=128, kernel_size=3)
         self.conv9b = conv(in_planes=128, out_planes=128, kernel_size=3)
 
         # # block 10
@@ -391,7 +391,7 @@ class UNetC(nn.Module):
         
         # 1/2
         
-        self.conv10a = conv(in_planes=192, out_planes=64, kernel_size=3)
+        self.conv10a = conv(in_planes=256, out_planes=64, kernel_size=3)
         self.conv10b = conv(in_planes=64, out_planes=64, kernel_size=3)
 
         # block 11
@@ -399,8 +399,10 @@ class UNetC(nn.Module):
         self.upsample11 = lambda x: F.upsample(x, size=(2 * x.shape[2], 2 * x.shape[3]), mode='bilinear')  # 2 x 2 upsampling
         # 1        
 
-        self.conv11a = conv(in_planes=96, out_planes=32, kernel_size=3)            
+        self.conv11a = conv(in_planes=128, out_planes=32, kernel_size=3)            
         self.conv11b = conv(in_planes=32, out_planes=32, kernel_size=3)
+
+        self.fuse_conv = conv(in_planes=64, out_planes=32, kernel_size=3)
         
         self.final_conv = nn.Conv2d(in_channels=32, out_channels=out_channels, kernel_size=3, stride=1, padding=1, dilation=1, bias=True)
         
@@ -464,15 +466,10 @@ class UNetC(nn.Module):
             concat_out = torch.cat([conv6b_out, stage1_encoder_output], dim=1)
             # concatenate encoder outputs
             
-            upsample7_out = self.upsample7(concat_out)
-            #upsample everything
-            
-            conv7a_in = torch.cat([upsample7_out, conv5b_out], dim=1)
-            # skip connection in stage2.
-            
+            conv7a_in = self.upsample7(concat_out)
+            #upsample everything            
         else: # only upsample and concatenate.
-            upsample7_out = self.upsample7(conv6b_out)
-            conv7a_in = torch.cat([upsample7_out, conv5b_out], dim=1)
+            conv7a_in = self.upsample7(conv6b_out)
             
         conv7a_out = self.conv7a(conv7a_in)
         conv7b_out = self.conv7b(conv7a_out)
@@ -480,39 +477,43 @@ class UNetC(nn.Module):
         if self.verbose:
             log.info("Output Block 7: "+str(conv7b_out.shape))
             
-        upsample8_out = self.upsample8(conv7b_out)
+        conv8a_in = torch.cat([conv7b_out, conv5b_out], dim=1)
+        conv8a_in = self.upsample8(conv8a_in)
         
-        conv8a_in = torch.cat([upsample8_out, conv4b_out], dim=1)
         conv8a_out = self.conv8a(conv8a_in)
         conv8b_out = self.conv8b(conv8a_out)
 
         if self.verbose:
             log.info("Output Block 8: "+str(conv8b_out.shape))
-            
-        upsample9_out = self.upsample8(conv8b_out)
+        
+        conv9a_in = torch.cat([conv8b_out, conv4b_out], dim=1)            
+        conv9a_in = self.upsample8(conv9a_in)
 
-        conv9a_in = torch.cat([upsample9_out, conv3b_out], dim=1)
         conv9a_out = self.conv9a(conv9a_in)
         conv9b_out = self.conv9b(conv9a_out)
 
         if self.verbose:
             log.info("Output Block 9: "+str(conv9b_out.shape))
 
-        upsample10_out = self.upsample10(conv9b_out)
-        conv10a_in = torch.cat([upsample10_out, conv2b_out], dim=1)
+        conv10a_in = torch.cat([conv9b_out, conv3b_out], dim=1)
+        conv10a_in = self.upsample10(conv10a_in)
+        
         conv10a_out = self.conv10a(conv10a_in)
         conv10b_out = self.conv10b(conv10a_out)
         
         if self.verbose:
             log.info("Output Block 10: "+str(conv10b_out.shape))
         
-        upsample11_out = self.upsample11(conv10b_out)
+        conv11a_in = torch.cat([conv10b_out, conv2b_out], dim=1)   
+        conv11a_in = self.upsample11(conv11a_in)
         
-        conv11a_in = torch.cat([upsample11_out, conv1b_out], dim=1)    
         conv11a_out = self.conv11a(conv11a_in)
         conv11b_out = self.conv11b(conv11a_out)
+
+        fuse_in = torch.cat([conv11b_out, conv1b_out], dim=1)
+        fuse_out = self.fuse_conv(fuse_in)
         
-        final_out = self.final_conv(conv11b_out)
+        final_out = self.final_conv(fuse_out)
         
         if self.verbose:
             log.info("Output Block 11: "+str(final_out.shape))
