@@ -231,15 +231,13 @@ class SSMLosses(nn.Module):
         # need this because I'm using multi-gpu, and need to accumulate the loss over samples. Such bad code :/
         
         total_loss =  loss_reconstr +  loss_warp +  loss_perceptual
-        # total_loss = total_loss/float(torch.cuda.device_count())
-        
-        # """
-        # Loss is averaged on each GPU. So combining across 4 GPUs, we need to average it.
-        # """
         
         loss_list = [total_loss, loss_reconstr, loss_warp, loss_perceptual]
 
         loss_tensor = torch.stack(loss_list).squeeze()
+        if len(loss_tensor.shape)==1:
+            loss_tensor = loss_tensor[:, None]
+            
         loss_tensor = loss_tensor.permute(1,0) # [B, 4] for 4 losses
         return loss_tensor
 
