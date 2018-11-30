@@ -34,7 +34,6 @@ class PerceptualLoss(nn.Module):
             param.requires_grad = False
         for param in self.parameters():
             param.requires_grad = False
-        # self.modulelist = list(self.vgg16.features.modules())[1:24] # until relu(conv4_3)
         self.vgg_conv4_3 = self.vgg16.features[:23]
 
     def rescale(self, tensor):
@@ -58,9 +57,6 @@ class PerceptualLoss(nn.Module):
     def forward(self, x_input, x_target):
         # x_input = self.rescale(x_input)
         # x_target = self.rescale(x_target)
-        # for aLayer in self.modulelist: # until conv4_3
-        #     x_input = aLayer(x_input)
-        #     x_target = aLayer(x_target)
         x_input = self.vgg_conv4_3(x_input)
         x_target = self.vgg_conv4_3(x_target)
         perceptual_loss = self.l2_loss(x_input, x_target)
@@ -186,13 +182,13 @@ class SSMLosses(nn.Module):
         pred_flow_t1 = flow_t1 + pred_dflow_t1
         pred_flow_t0 = flow_t0 + pred_dflow_t0
 
-        pred_img_0t = warp(img_0, -pred_flow_t0) # backward warping to produce img at time t
-        pred_img_1t = warp(img_1, -pred_flow_t1) # backward warping to produce img at time t
+        pred_img_0t = warp(img_0, pred_flow_t0) # backward warping to produce img at time t
+        pred_img_1t = warp(img_1, pred_flow_t1) # backward warping to produce img at time t
 
         loss_warp = 0
 
         if not self.cfg.getboolean("STAGE1","FREEZE"):
-            loss_warp += self.warp_loss_1(warp(img_1, -flow_01), img_0) + self.warp_loss_2(warp(img_0, -flow_10), img_1)
+            loss_warp += self.warp_loss_1(warp(img_1, flow_01), img_0) + self.warp_loss_2(warp(img_0, flow_10), img_1)
 
         if not self.cfg.getboolean("STAGE2", "FREEZE"):
             loss_warp += self.warp_loss_3(pred_img_0t, target_image) + self.warp_loss_4(pred_img_1t, target_image)
@@ -210,7 +206,6 @@ class SSMLosses(nn.Module):
         loss_tensor = loss_tensor.contiguous().view(loss_tensor.shape[0], -1)
         batch_mean = loss_tensor.mean(dim=1)[:, None]
         return batch_mean
-    
 
     def forward(self, flowC_input, flowC_output, flowI_input, flowI_output, interpolated_image, target_image):
         lambda_r, lambda_p, lambda_w, lambda_s = self.loss_weights

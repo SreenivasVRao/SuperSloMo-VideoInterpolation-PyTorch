@@ -13,7 +13,7 @@ log = logging.getLogger(__name__)
 class UNetA(nn.Module):
 
     def __init__(self, in_channels, out_channels, cross_skip, verbose=False):
-        super(UNet, self).__init__()
+        super(UNetA, self).__init__()
         self.cross_skip = cross_skip
         self.verbose = verbose
         self.build_model(in_channels, out_channels)
@@ -232,8 +232,8 @@ class UNetA(nn.Module):
         img_0 = img_tensor[:,:3,:,:]
         img_1 = img_tensor[:,3:,:,:]
 
-        warped_img_1t = warp(img_1, - est_flow_t1) # backward warping
-        warped_img_0t = warp(img_0, - est_flow_t0) # backward warping
+        warped_img_1t = warp(img_1, est_flow_t1) # backward warping
+        warped_img_0t = warp(img_0, est_flow_t0) # backward warping
 
         input_tensor = torch.cat([img_1, warped_img_1t, est_flow_t1,
                                   est_flow_t0, warped_img_0t, img_0], dim=1)
@@ -281,8 +281,8 @@ class UNetA(nn.Module):
         pred_flow_t1 = est_flow_t1 + pred_dflow_t1
         pred_flow_t0 = est_flow_t0 + pred_dflow_t0
 
-        pred_img_0t = warp(img_0, -pred_flow_t0) # backward warping to produce img at time t
-        pred_img_1t = warp(img_1, -pred_flow_t1) # backward warping to produce img at time t
+        pred_img_0t = warp(img_0, pred_flow_t0) # backward warping to produce img at time t
+        pred_img_1t = warp(img_1, pred_flow_t1) # backward warping to produce img at time t
 
         pred_img_0t = pred_v_0t * pred_img_0t # visibility map occlusion reasoning
         pred_img_1t = pred_v_1t * pred_img_1t # visibility map occlusion reasoning
@@ -547,8 +547,8 @@ class UNetC(nn.Module):
         img_0 = img_tensor[:,:3,:,:]
         img_1 = img_tensor[:,3:,:,:]
 
-        warped_img_1t = warp(img_1, - est_flow_t1) # backward warping
-        warped_img_0t = warp(img_0, - est_flow_t0) # backward warping
+        warped_img_1t = warp(img_1, est_flow_t1) # backward warping
+        warped_img_0t = warp(img_0, est_flow_t0) # backward warping
 
         input_tensor = torch.cat([img_1, warped_img_1t, est_flow_t1,
                                   est_flow_t0, warped_img_0t, img_0], dim=1)
@@ -596,8 +596,8 @@ class UNetC(nn.Module):
         pred_flow_t1 = est_flow_t1 + pred_dflow_t1
         pred_flow_t0 = est_flow_t0 + pred_dflow_t0
 
-        pred_img_0t = warp(img_0, -pred_flow_t0) # backward warping to produce img at time t
-        pred_img_1t = warp(img_1, -pred_flow_t1) # backward warping to produce img at time t
+        pred_img_0t = warp(img_0, pred_flow_t0) # backward warping to produce img at time t
+        pred_img_1t = warp(img_1, pred_flow_t1) # backward warping to produce img at time t
 
         pred_img_0t = pred_v_0t * pred_img_0t # visibility map occlusion reasoning
         pred_img_1t = pred_v_1t * pred_img_1t # visibility map occlusion reasoning
