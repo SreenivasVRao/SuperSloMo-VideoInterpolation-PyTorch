@@ -144,7 +144,7 @@ class AugmentData(object):
     
 class ResizeCrop(object):
     """
-    Convert 720 x 1280 frames to 320 x 640 -> Resize + Random Cropping
+    Convert 720 x 1280 frames to 352 x 352 -> Resize + Random Cropping
     """
 
     def __call__(self, sample_frames):
@@ -156,9 +156,10 @@ class ResizeCrop(object):
 
         for idx in range(sample_frames.shape[0]):
             new_frames[idx, ...] = cv2.resize(sample_frames[idx, ...], (640, 360))
-        h_start = np.random.randint(0, 360-320+1)
+        h_start = np.random.randint(0, 360-352+1)
+        w_start = np.random.randint(0, 640-352+1)
 
-        new_frames = new_frames[:, h_start:h_start+320, ...]
+        new_frames = new_frames[:, h_start:h_start+352, w_start:w_start+352, ...]
 
         return new_frames
 
@@ -224,7 +225,7 @@ def data_generator(config, split, eval=False):
 
     if eval:
         custom_transform = transforms.Compose([ResizeCrop(), ToTensor()])
-        t_sample = "RANDOM"
+        t_sample = "FIXED"
     else:
         custom_transform = transforms.Compose([ResizeCrop(), AugmentData(), ToTensor()])
         t_sample = config.get("MISC", "T_SAMPLE")
