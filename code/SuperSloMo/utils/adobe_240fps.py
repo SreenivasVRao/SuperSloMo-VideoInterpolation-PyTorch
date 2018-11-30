@@ -110,20 +110,6 @@ class Reader(Dataset):
         img_paths = self.clips[idx]
         img_paths = self.get_required_images(img_paths)
     
-        # img = cv2.imread(img_paths[0])
-        # h, w, c = img.shape
-        # frames = np.zeros([len(img_paths), h, w, c])  # images are sometimes flipped for vertical videos.
-
-        # for idx, fpath in enumerate(img_paths):
-        #     img = cv2.imread(fpath)
-        #     frames[idx,...] = img
-
-        # if h==1280 and w==720: # vertical video. W = 720, H =1280
-        #     frames = frames.swapaxes(1, 2)
-
-        # if self.transform:
-        #     frames = self.transform(frames)
-
         return img_paths
 
     
@@ -141,22 +127,11 @@ class AugmentData(object):
         if np.random.randint(0, 2)==1:
             frames = frames[:,:,::-1,:] # horizontal flip 50% of the time
 
-        # tx = np.random.randint(-25, 25)
-        # ty = np.random.randint(-25, 25)
-        # theta = np.random.uniform(-np.pi/30, np.pi/30)
-
         N, H, W, C = frames.shape
-
-        # M  = np.array([[1, 0, 0], [0, 1, 0]]).astype(np.float32)        
-        # M[0, 2] = tx
-        # M[1, 2] = ty
-        # M[0, 0] = M[1, 1] = np.cos(theta)
-        # M[0, 1] = -np.sin(theta)
-        # M[1, 0] = np.sin(theta)
 
         cx = np.random.randint(0, W)
         cy = np.random.randint(0, H)
-        theta = np.random.uniform(-10, 10)
+        theta = np.random.uniform(-5, 5)
         M = cv2.getRotationMatrix2D((cx, cy),theta,1)
         # rotate around random center.
  
@@ -249,9 +224,9 @@ def data_generator(config, split, eval=False):
 
     if eval:
         custom_transform = transforms.Compose([ResizeCrop(), ToTensor()])
-        t_sample = "NIL"
+        t_sample = "RANDOM"
     else:
-        custom_transform = transforms.Compose([AugmentData(), ResizeCrop(), ToTensor()])
+        custom_transform = transforms.Compose([ResizeCrop(), AugmentData(), ToTensor()])
         t_sample = config.get("MISC", "T_SAMPLE")
 
     batch_size = config.getint(split, "BATCH_SIZE")
@@ -292,12 +267,18 @@ if __name__ == '__main__':
     logging.info("Read config")
 
     samples = data_generator(config, "TRAIN")
+    aBatch, t_idx = next(samples)
+    log.info(aBatch.shape)
+    log.info(t_idx)
+    np.savez("Sample.npz", data=aBatch)
     import time
     start = time.time()
-
+    k = 0
     for aBatch, t_idx in samples:
-        log.info(aBatch.shape)
-        log.info(t_idx)
+        k+=1
         
     stop = time.time()
-    log.info(stop-start)
+    total = (stop-start)
+    average = total/k
+    log.info("Total: %.2f seconds"%total)
+    log.info("Average: %.2f seconds"%average)
