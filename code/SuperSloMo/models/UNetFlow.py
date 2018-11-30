@@ -10,6 +10,7 @@ log = logging.getLogger(__name__)
 # Additive Skip connections UNet module. #
 ##########################################
 
+
 class UNetA(nn.Module):
 
     def __init__(self, in_channels, out_channels, cross_skip, verbose=False):
@@ -301,6 +302,7 @@ class UNetA(nn.Module):
 # Concatenative Skip connections UNet module. #
 ###############################################
     
+
 class UNetC(nn.Module):
 
     def __init__(self, in_channels, out_channels, cross_skip, verbose=False, stage=-1):
@@ -405,8 +407,7 @@ class UNetC(nn.Module):
         self.fuse_conv = conv(in_planes=64, out_planes=32, kernel_size=3)
         
         self.final_conv = nn.Conv2d(in_channels=32, out_channels=out_channels, kernel_size=3, stride=1, padding=1, dilation=1, bias=True)
-        
-        
+
     def forward(self, flowI_input, stage1_encoder_output=None):
         """
         :param input_tensor: input: N,16, H, W,
@@ -487,7 +488,7 @@ class UNetC(nn.Module):
             log.info("Output Block 8: "+str(conv8b_out.shape))
         
         conv9a_in = torch.cat([conv8b_out, conv4b_out], dim=1)            
-        conv9a_in = self.upsample8(conv9a_in)
+        conv9a_in = self.upsample9(conv9a_in)
 
         conv9a_out = self.conv9a(conv9a_in)
         conv9b_out = self.conv9b(conv9a_out)
