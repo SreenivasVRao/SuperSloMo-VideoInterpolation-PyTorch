@@ -225,7 +225,7 @@ def data_generator(config, split, eval=False):
 
     if eval:
         custom_transform = transforms.Compose([ResizeCrop(), ToTensor()])
-        t_sample = "FIXED"
+        t_sample = "NIL"
     else:
         custom_transform = transforms.Compose([ResizeCrop(), AugmentData(), ToTensor()])
         t_sample = config.get("MISC", "T_SAMPLE")
@@ -271,15 +271,31 @@ if __name__ == '__main__':
     aBatch, t_idx = next(samples)
     log.info(aBatch.shape)
     log.info(t_idx)
-    np.savez("Sample.npz", data=aBatch)
     import time
     start = time.time()
     k = 0
-    for aBatch, t_idx in samples:
-        k+=1
+    for epoch in range(10):
+        log.info("Epoch: %s K: %s"%(epoch, k))
+        for aBatch, t_idx in samples:
+            k+=1
         
     stop = time.time()
     total = (stop-start)
     average = total/k
     log.info("Total: %.2f seconds"%total)
     log.info("Average: %.2f seconds"%average)
+
+    start = time.time()
+    k = 0
+    for epoch in range(10):
+        log.info("Epoch: %s"%epoch)
+        samples = data_generator(config, "TRAIN")
+        for aBatch, t_idx in samples:
+            k+=1
+        
+    stop = time.time()
+    total = (stop-start)
+    average = total/k
+    log.info("Total: %.2f seconds"%total)
+    log.info("Average: %.2f seconds"%average)
+    

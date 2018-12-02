@@ -1,5 +1,5 @@
 import numpy as np
-from skimage.measure import compare_ssim
+from skimage.measure import compare_ssim, compare_psnr
 
 
 def get_scores(output_batch, target_batch):
@@ -28,8 +28,10 @@ def get_scores(output_batch, target_batch):
         mse_score = np.square(output_image - target_image).mean()
         
         rmse_score = np.sqrt(mse_score)
-        psnr_score = 20*np.log10(255.0/(rmse_score+1e-7)) # avoid divide by zero.
-        ssim_score = compare_ssim(output_image, target_image, multichannel=True)
+        # psnr_score = 20*np.log10(255.0/(rmse_score+1e-7)) # avoid divide by zero.
+        psnr_score = compare_psnr(output_image.astype(np.uint8), target_image.astype(np.uint8))
+        ssim_score = compare_ssim(output_image.astype(np.uint8), target_image.astype(np.uint8),
+                                  multichannel=True, gaussian_weights=True)
 
         psnr_scores.append(psnr_score)
         ie_scores.append(rmse_score)

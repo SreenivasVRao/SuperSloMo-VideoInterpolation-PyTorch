@@ -616,11 +616,11 @@ def get_model(path, in_channels, out_channels, cross_skip, verbose=False, stage=
     model = UNetC(in_channels, out_channels, cross_skip, verbose=verbose, stage=stage)
     if path is not None:
         data = torch.load(path)
-        if 'stage1_state_dict' in data.keys() and out_channels==4:
+        if 'stage1_state_dict' in data.keys() and stage==1:
             log.info("Loading Stage 1 UNet.")
             model.load_state_dict(data['stage1_state_dict'])
             log.info("Loaded weights for Flow Computation: "+str(path))
-        elif 'stage2_state_dict' in data.keys() and out_channels==5:
+        elif 'stage2_state_dict' in data.keys() and stage==2:
             log.info("Loading Stage 2 UNet.")
             model.load_state_dict(data['stage2_state_dict'])
             log.info("Loaded weights for Flow Interpolation: "+str(path))
