@@ -46,7 +46,7 @@ class FullModel(nn.Module):
             
         # Flow Computation Model
         log.info("STAGE 2 %s"%self.cfg.get("STAGE2", "MODEL"))
-        self.stage2_model = UNetFlow.get_model(stage2_weights, in_channels=20, out_channels=5,
+        self.stage2_model = UNetFlow.get_model(stage2_weights, in_channels=16, out_channels=5,
                                                cross_skip=self.cross_skip, stage=2)
         # Flow Interpolation Model
 

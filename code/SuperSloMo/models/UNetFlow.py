@@ -551,7 +551,7 @@ class UNetC(nn.Module):
         warped_img_0t = warp(img_0, est_flow_t0) # backward warping
 
         input_tensor = torch.cat([img_1, warped_img_1t, est_flow_t1,
-                                  est_flow_t0, warped_img_0t, img_0, flow_01, flow_10], dim=1)
+                                  est_flow_t0, warped_img_0t, img_0], dim=1)
 
         if self.verbose:
             log.info("Generated Input tensor of shape:"+str(input_tensor.shape))
