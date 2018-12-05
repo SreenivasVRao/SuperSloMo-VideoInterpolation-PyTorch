@@ -55,7 +55,7 @@ class Reader(Dataset):
         :return: returns sample of 9 frames.
         """
         n_frames = len(image_list)
-
+        
         if self.split=="TRAIN" and np.random.randint(0, 2)==1:
             image_list = image_list[::-1]
 
@@ -158,7 +158,7 @@ class ResizeCrop(object):
             new_frames[idx, ...] = cv2.resize(sample_frames[idx, ...], (640, 360))
         h_start = np.random.randint(0, 360-352+1)
         w_start = np.random.randint(0, 640-352+1)
-
+        # h_start = w_start = 0
         new_frames = new_frames[:, h_start:h_start+352, w_start:w_start+352, ...]
 
         return new_frames
@@ -206,7 +206,6 @@ def collate_data(aBatch, custom_transform, t_sample):
 def read_sample(img_paths, t_index=None):
     if t_index:
         img_paths = [img_paths[0], img_paths[t_index], img_paths[-1]]
-        
     img = cv2.imread(img_paths[0])
     h, w, c = img.shape
     frames = np.zeros([len(img_paths), h, w, c])  # images are sometimes flipped for vertical videos.
@@ -226,7 +225,10 @@ def data_generator(config, split, eval=False):
     if eval:
         custom_transform = transforms.Compose([ResizeCrop(), ToTensor()])
         t_sample = "NIL"
-    else:
+    elif split=="VAL":
+        custom_transform = transforms.Compose([ResizeCrop(), ToTensor()])
+        t_sample = config.get("MISC", "T_SAMPLE")
+    elif split=="TRAIN":
         custom_transform = transforms.Compose([ResizeCrop(), AugmentData(), ToTensor()])
         t_sample = config.get("MISC", "T_SAMPLE")
 
@@ -267,35 +269,59 @@ if __name__ == '__main__':
     config.read(args.config)
     logging.info("Read config")
 
-    samples = data_generator(config, "TRAIN")
-    aBatch, t_idx = next(samples)
-    log.info(aBatch.shape)
-    log.info(t_idx)
-    import time
-    start = time.time()
-    k = 0
-    for epoch in range(10):
-        log.info("Epoch: %s K: %s"%(epoch, k))
-        for aBatch, t_idx in samples:
-            k+=1
-        
-    stop = time.time()
-    total = (stop-start)
-    average = total/k
-    log.info("Total: %.2f seconds"%total)
-    log.info("Average: %.2f seconds"%average)
+    total_frames = 0
+    total_clips = 0
+    for split in ["TRAIN", "VAL"]:
+        clips = set([])
+        n_frames = 0
+        log.info(split)
+        dataset = Reader(config, split)
+        for each in dataset.clips:
+            n_frames += len(each)
+            impath = each[0]
+            clip = impath.split('/')[-2]
+            clip = int(clip.split("_")[-1])
+            clips.add(clip)
+        clips = list(clips)
+        clips = sorted(clips)
+        log.info(clips)
 
-    start = time.time()
-    k = 0
-    for epoch in range(10):
-        log.info("Epoch: %s"%epoch)
-        samples = data_generator(config, "TRAIN")
-        for aBatch, t_idx in samples:
-            k+=1
+        n_clips = len(dataset.clips)
+        log.info("N Frames: %s"%n_frames)
+        log.info("N Clips: %s"%n_clips)
+        log.info("Mean Clip Length:%s"%(float(n_frames)/n_clips))
+
+        total_frames+= n_frames
+        total_clips+= n_clips
+
+    log.info("Total Frames: %s"%total_frames)
+    log.info("Total Clips: %s"%total_clips)
+    log.info("Mean Clip Length :%s"%(float(total_frames)/total_clips))
+            
+            
+
+    
+
+    # samples = data_generator(config, "TRAIN")
+    # n_frames = 0
+    
+    # aBatch, t_idx = next(samples)
+    # log.info(aBatch.shape)
+    # log.info(t_idx)
+
+    # n_frames = aBatch.shape[0]*aBatch.shape[1]
+    
+    # import time
+    # start = time.time()
+    # k = 0
+    # for epoch in range(10):
+    #     log.info("Epoch: %s K: %s"%(epoch, k))
+    #     for aBatch, t_idx in samples:
+    #         k+=1
         
-    stop = time.time()
-    total = (stop-start)
-    average = total/k
-    log.info("Total: %.2f seconds"%total)
-    log.info("Average: %.2f seconds"%average)
+    # stop = time.time()
+    # total = (stop-start)
+    # average = total/k
+    # log.info("Total: %.2f seconds"%total)
+    # log.info("Average: %.2f seconds"%average)
     

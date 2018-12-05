@@ -70,7 +70,7 @@ class SSMNet:
         :param total_loss: Weighted sum of all losses.
         :param individual_losses: Tuple of 4 losses.
         :param iteration: Current iteration.
-        :param split: Train/Val,
+        :param split: Train/Val
         :return:
         """
         total_loss, loss_reconstr,  loss_warp,loss_perceptual = losses
@@ -78,8 +78,8 @@ class SSMNet:
         self.writer.add_scalars('Total_Loss', {split: total_loss.item()}, iteration)
         self.writer.add_scalars('Reconstruction_Loss', {split: loss_reconstr.item()}, iteration)
         self.writer.add_scalars('Perceptual_Loss', {split: loss_perceptual.item()}, iteration)
-        # self.writer.add_scalars('Smoothness_Loss', {split: loss_smooth.item()}, iteration)
         self.writer.add_scalars('Warping_Loss', {split: loss_warp.item()}, iteration)
+        # self.writer.add_scalars('Smoothness_Loss', {split: loss_smooth.item()}, iteration)
 
     def forward_pass(self, data_batch, dataset_info, split, iteration, t_idx, get_interpolation=False):
         """
@@ -97,18 +97,18 @@ class SSMNet:
         img_1 = data_batch[:, -1, ...]
         t_interp = float(t_idx)/8
 
-        if not get_interpolation:
+        if get_interpolation:
+            if iteration==1:
+                log.info("Getting only Interpolation Result.")
+            interpolation_result = self.superslomo(img_0, img_1, dataset_info, t_interp, split=split, iteration=iteration)
+            return interpolation_result
+        
+        elif not get_interpolation:
             losses = self.superslomo(img_0, img_1, dataset_info, t_interp, split=split, iteration=iteration, target_image=img_t)
             losses = losses.mean(dim=0) # averages the loss over the batch. Horrific code. [B, 4] -> [4]
             self.write_losses(losses, iteration, split)
             total_loss = losses[0]
             return total_loss
-
-        else:
-            if iteration==1:
-                log.info("Getting only Interpolation Result.")
-            interpolation_result = self.superslomo(img_0, img_1, dataset_info, t_interp, split=split, iteration=iteration)
-            return interpolation_result, img_t
 
     def train(self):
         """
@@ -117,17 +117,18 @@ class SSMNet:
         :return:
         """
         optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.superslomo.parameters()),
-                                     lr=self.learning_rate)
+                                     lr=self.learning_rate)        
         lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=self.lr_period, gamma=self.lr_decay)
+            
         iteration = 0
 
         train_info = adobe_240fps.get_data_info(self.cfg, split="TRAIN")
-        val_info = adobe_240fps.get_data_info(self.cfg, split="VAL")
+        # val_info = adobe_240fps.get_data_info(self.cfg, split="VAL")
 
         for epoch in range(1, self.n_epochs+1):
             # shuffles the data on each epoch
             adobe_train_samples = adobe_240fps.data_generator(self.cfg, split="TRAIN")
-            adobe_val_samples = adobe_240fps.data_generator(self.cfg, split="VAL", eval=True)
+            # adobe_val_samples = adobe_240fps.data_generator(self.cfg, split="VAL")
             lr_scheduler.step()
 
             for train_batch in adobe_train_samples:
@@ -141,17 +142,17 @@ class SSMNet:
                 optimizer.zero_grad()
                 train_loss.backward()
                 optimizer.step()
-                try:
-                    val_batch = next(adobe_val_samples)
-                except StopIteration:
-                    adobe_val_samples = adobe_240fps.data_generator(self.cfg, split="VAL", eval=True)
-                    val_batch = next(adobe_val_samples)
+                # try:
+                #     val_batch = next(adobe_val_samples)
+                # except StopIteration:
+                #     adobe_val_samples = adobe_240fps.data_generator(self.cfg, split="VAL")
+                #     val_batch = next(adobe_val_samples)
 
-                data_batch, t_idx = val_batch
-                if data_batch.shape[0]<torch.cuda.device_count():
-                    continue
+                # data_batch, t_idx = val_batch
+                # if data_batch.shape[0]<torch.cuda.device_count():
+                #     continue
                 
-                self.forward_pass(data_batch, val_info, "VAL", iteration, t_idx)
+                # self.forward_pass(data_batch, val_info, "VAL", iteration, t_idx)
                     
             log.info("Epoch: "+str(epoch)+" Iteration: "+str(iteration))
 
@@ -193,7 +194,7 @@ class SSMNet:
             if iteration==1:
                 log.info(data_batch.shape)
             for t_idx in range(1, 8):
-                est_image_t, _ = self.forward_pass(data_batch, info, split, iteration, t_idx, get_interpolation=True)
+                est_image_t = self.forward_pass(data_batch, info, split, iteration, t_idx, get_interpolation=True)
                 gt_image_t = data_batch[:, t_idx, ...]
                 psnr_scores, IE_scores, ssim_scores = metrics_v2.get_scores(est_image_t, gt_image_t)
                 total_IE   += np.sum(IE_scores)
@@ -238,13 +239,13 @@ if __name__ == '__main__':
 
     ssm_net = SSMNet(cfg, args.expt, args.msg)
 
-    # ssm_net.train()
+    ssm_net.train()
 
-    # log.info("Training complete.")
+    log.info("Training complete.")
     
-    log.info("Evaluating metrics.")
+    # log.info("Evaluating metrics.")
 
-    ssm_net.superslomo.eval()
+    # ssm_net.superslomo.eval()
 
     # adobe_train = adobe_240fps.data_generator(cfg, split="TRAIN", eval=True)
     # train_info = adobe_240fps.get_data_info(cfg, split="TRAIN")
@@ -252,11 +253,11 @@ if __name__ == '__main__':
     # PSNR, IE, SSIM = ssm_net.compute_metrics(adobe_train, train_info, "TRAIN")
     # logging.info("ADOBE TRAIN: Average PSNR %.3f IE %.3f SSIM %.3f"%(PSNR, IE, SSIM))
 
-    adobe_val = adobe_240fps.data_generator(cfg, split="VAL", eval=True)
-    val_info = adobe_240fps.get_data_info(cfg, split="VAL")
+    # adobe_val = adobe_240fps.data_generator(cfg, split="VAL", eval=True)
+    # val_info = adobe_240fps.get_data_info(cfg, split="VAL")
     
-    PSNR, IE, SSIM = ssm_net.compute_metrics(adobe_val, val_info, "VAL")
-    logging.info("ADOBE VAL: Average PSNR %.3f IE %.3f SSIM %.3f"%(PSNR, IE, SSIM))
+    # PSNR, IE, SSIM = ssm_net.compute_metrics(adobe_val, val_info, "VAL")
+    # logging.info("ADOBE VAL: Average PSNR %.3f IE %.3f SSIM %.3f"%(PSNR, IE, SSIM))
     
 
 ##################################################

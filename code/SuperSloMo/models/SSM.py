@@ -46,7 +46,7 @@ class FullModel(nn.Module):
             
         # Flow Computation Model
         log.info("STAGE 2 %s"%self.cfg.get("STAGE2", "MODEL"))
-        self.stage2_model = UNetFlow.get_model(stage2_weights, in_channels=16, out_channels=5,
+        self.stage2_model = UNetFlow.get_model(stage2_weights, in_channels=20, out_channels=5,
                                                cross_skip=self.cross_skip, stage=2)
         # Flow Interpolation Model
 
@@ -70,9 +70,7 @@ class FullModel(nn.Module):
                 param.requires_grad = False
         else:
             log.info("Training stage2 model.")
-
-        
-
+            
     def stage1_computations(self, img0, img1, dataset_info):
         """
         Refer to PWC-Net repo for more details.
@@ -138,7 +136,7 @@ class FullModel(nn.Module):
             self.writer.add_image(split, interpolation_result[0, [2,1,0], ...], iteration)
 
         if target_image is not None:
-            losses = self.loss(img_tensor, flow_tensor, flowI_input, flowI_output, interpolation_result, target_image)
+            losses = self.loss(img_tensor, flowI_input, interpolation_result, target_image)
             return losses
         
         return interpolation_result

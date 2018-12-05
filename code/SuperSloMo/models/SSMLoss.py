@@ -63,72 +63,68 @@ class PerceptualLoss(nn.Module):
         return perceptual_loss
 
 
-class SmoothnessLoss(nn.Module):
-    def __init__(self):
-        super(SmoothnessLoss, self).__init__()
-        for param in self.parameters():
-            param.requires_grad = False
+# class SmoothnessLoss(nn.Module):
+#     def __init__(self):
+#         super(SmoothnessLoss, self).__init__()
+#         for param in self.parameters():
+#             param.requires_grad = False
 
-        self.eval()
+#         self.eval()
 
-    def forward(self, flow_input, image):
+#     def forward(self, flow_input, image):
 
-        gx_flow = self.gradient_x(flow_input)
-        gx_image = self.gradient_x(image)
+#         gx_flow = self.gradient_x(flow_input)
+#         gx_image = self.gradient_x(image)
 
-        w_gx_image = torch.mean(torch.abs(gx_image), dim=1, keepdim=True)
-        w_gx_image = torch.exp(- w_gx_image)
-        gx_flow = gx_flow * w_gx_image
-        smooth_x_loss = torch.mean(torch.abs(gx_flow))
+#         w_gx_image = torch.mean(torch.abs(gx_image), dim=1, keepdim=True)
+#         w_gx_image = torch.exp(- w_gx_image)
+#         gx_flow = gx_flow * w_gx_image
+#         smooth_x_loss = torch.mean(torch.abs(gx_flow))
 
-        gy_flow = self.gradient_y(flow_input)
-        gy_image = self.gradient_y(image)
-        w_gy_image = torch.mean(torch.abs(gy_image), dim=1, keepdim=True)
-        w_gy_image = torch.exp(- w_gy_image)
-        gy_flow = gy_flow * w_gy_image
-        smooth_y_loss = torch.mean(torch.abs(gy_flow))
+#         gy_flow = self.gradient_y(flow_input)
+#         gy_image = self.gradient_y(image)
+#         w_gy_image = torch.mean(torch.abs(gy_image), dim=1, keepdim=True)
+#         w_gy_image = torch.exp(- w_gy_image)
+#         gy_flow = gy_flow * w_gy_image
+#         smooth_y_loss = torch.mean(torch.abs(gy_flow))
 
-        loss_term = smooth_y_loss + smooth_x_loss
+#         loss_term = smooth_y_loss + smooth_x_loss
 
-        return loss_term
+#         return loss_term
 
-    def spatial_gradient(self, image):
-        """
-        Compute magnitude of first order spatial gradient.
-        :param image: tensor B, C, H, W
-        :return: B C H W tensor - magnitude of first order spatial gradient
-        """
-        gx = self.gradient_x(image)
-        gy = self.gradient_y(image)
-        total_gradient = torch.sqrt(gx**2 + gy**2)
-        return total_gradient
+#     def spatial_gradient(self, image):
+#         """
+#         Compute magnitude of first order spatial gradient.
+#         :param image: tensor B, C, H, W
+#         :return: B C H W tensor - magnitude of first order spatial gradient
+#         """
+#         gx = self.gradient_x(image)
+#         gy = self.gradient_y(image)
+#         total_gradient = torch.sqrt(gx**2 + gy**2)
+#         return total_gradient
 
-    def gradient_x(self, img):
+#     def gradient_x(self, img):
 
-        # Pad input to keep output size consistent
-        img = F.pad(img, (0, 1, 0, 0), mode="replicate")
-        gx = img[:, :, :, :-1] - img[:, :, :, 1:]  # NCHW
-        return gx
+#         # Pad input to keep output size consistent
+#         img = F.pad(img, (0, 1, 0, 0), mode="replicate")
+#         gx = img[:, :, :, :-1] - img[:, :, :, 1:]  # NCHW
+#         return gx
 
-    def gradient_y(self, img):
+#     def gradient_y(self, img):
 
-        # Pad input to keep output size consistent
-        img = F.pad(img, (0, 0, 0, 1), mode="replicate")
-        gy = img[:, :, :-1, :] - img[:, :, 1:, :]  # NCHW
-        return gy
+#         # Pad input to keep output size consistent
+#         img = F.pad(img, (0, 0, 0, 1), mode="replicate")
+#         gy = img[:, :, :-1, :] - img[:, :, 1:, :]  # NCHW
+#         return gy
  
 
 class SSMLosses(nn.Module):
 
     def __init__(self, cfg):
         super(SSMLosses, self).__init__()
-
-        self.reconstr_loss_fn = nn.L1Loss(reduce=False)
-
-        self.perceptual_loss_fn = PerceptualLoss()
-        self.smooth_loss_1 = SmoothnessLoss()
-        self.smooth_loss_2 = SmoothnessLoss()
         self.cfg = cfg
+        self.perceptual_loss_fn = PerceptualLoss()
+        self.reconstr_loss_fn = nn.L1Loss(reduce=False)
         self.warp_loss_1 = nn.L1Loss(reduce=False)
         self.warp_loss_2 = nn.L1Loss(reduce=False)
         self.warp_loss_3 = nn.L1Loss(reduce=False)
@@ -153,7 +149,7 @@ class SSMLosses(nn.Module):
 
         v_1t = output_tensor[:, 0, ...] # Visibility Map 1-> t
         dflow_t1 = output_tensor[:, 1:3, ...] # Residual of flow t->1
-        dflow_t0 = output_tensor[:, 3:, ...] # Residual of flow t->0
+        dflow_t0 = output_tensor[:, 3:5, ...] # Residual of flow t->0
 
         v_1t = v_1t[:, None, ...] # making dimensions compatible
 
@@ -166,32 +162,26 @@ class SSMLosses(nn.Module):
     def get_reconstruction_loss(self, interpolated_image, target_image):
         return self.reconstr_loss_fn(interpolated_image, target_image)
 
-    def get_warp_loss(self, img_tensor, flow_tensor, input_tensor, output_tensor, target_image):
-
-        flow_01 = flow_tensor[:,:2,  ...]
-        flow_10 = flow_tensor[:, 2:, ...]
-
-        img_0 = img_tensor[:,:3,...]
-        img_1 = img_tensor[:,3:,...]
-
-        flow_t1 = input_tensor[:, 6:8, ...] # Estimated flow t->1
-        flow_t0= input_tensor[:, 8:10, ...] # Estimated flow t->0
-
-        pred_v_1t, pred_dflow_t1, pred_dflow_t0, pred_v_0t  = self.extract_outputs(output_tensor)
-
-        pred_flow_t1 = flow_t1 + pred_dflow_t1
-        pred_flow_t0 = flow_t0 + pred_dflow_t0
-
-        pred_img_0t = warp(img_0, pred_flow_t0) # backward warping to produce img at time t
-        pred_img_1t = warp(img_1, pred_flow_t1) # backward warping to produce img at time t
+    def get_warp_loss(self, img_tensor, input_tensor, target_image):
 
         loss_warp = 0
 
         if not self.cfg.getboolean("STAGE1","FREEZE"):
-            loss_warp += self.warp_loss_1(warp(img_1, flow_01), img_0) + self.warp_loss_2(warp(img_0, flow_10), img_1)
-
-        if not self.cfg.getboolean("STAGE2", "FREEZE"):
-            loss_warp += self.warp_loss_3(pred_img_0t, target_image) + self.warp_loss_4(pred_img_1t, target_image)
+            img_0 = img_tensor[:, 0:3, ...]
+            img_1 = img_tensor[:, 3:6, ...]
+            
+            warped_img_1t = input_tensor[:, 3:6, ...]
+            est_flow_t1 = input_tensor[:, 6:8, ...]
+            est_flow_t0 = input_tensor[:, 8:10, ...]
+            warped_img_0t = input_tensor[:, 10:13, ...]
+            
+            flow_01 = input_tensor[:, 16:18, ...]
+            flow_10 = input_tensor[:, 18:20, ...]
+        
+            loss_warp = self.warp_loss_1(warp(img_1, flow_01), img_0) + \
+                self.warp_loss_2(warp(img_0, flow_10), img_1) + \
+                self.warp_loss_3(warped_img_1t, target_image) + \
+                self.warp_loss_4(warped_img_0t, target_image)
 
         return loss_warp
 
@@ -207,12 +197,12 @@ class SSMLosses(nn.Module):
         batch_mean = loss_tensor.mean(dim=1)[:, None]
         return batch_mean
 
-    def forward(self, flowC_input, flowC_output, flowI_input, flowI_output, interpolated_image, target_image):
+    def forward(self, flowC_input, flowI_input, interpolated_image, target_image):
         lambda_r, lambda_p, lambda_w, lambda_s = self.loss_weights
 
-        loss_reconstr = lambda_r * self.get_reconstruction_loss(interpolated_image, target_image)*255.0
+        loss_reconstr = lambda_r * self.get_reconstruction_loss(interpolated_image, target_image)*255.0        
         loss_perceptual =lambda_p * self.get_perceptual_loss(interpolated_image*255.0, target_image*255.0)
-        loss_warp = lambda_w * self.get_warp_loss(flowC_input, flowC_output, flowI_input, flowI_output, target_image)*255.0
+        loss_warp = lambda_w * self.get_warp_loss(flowC_input, flowI_input, target_image)*255.0
 
         loss_reconstr = loss_reconstr.view(loss_reconstr.shape[0], -1).mean(dim=1)[:, None]
         loss_perceptual = loss_perceptual.view(loss_perceptual.shape[0], -1).mean(dim=1)[:, None]
