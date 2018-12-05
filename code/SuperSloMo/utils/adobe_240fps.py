@@ -158,11 +158,27 @@ class ResizeCrop(object):
             new_frames[idx, ...] = cv2.resize(sample_frames[idx, ...], (640, 360))
         h_start = np.random.randint(0, 360-352+1)
         w_start = np.random.randint(0, 640-352+1)
-        # h_start = w_start = 0
         new_frames = new_frames[:, h_start:h_start+352, w_start:w_start+352, ...]
 
         return new_frames
 
+
+class EvalPad(object):
+    """
+    Zero padding for evaluation alone. 720 x 1280 -> 736x1280
+    """
+    def __call__(self, sample_tensor):
+
+        _, c, h, w = sample_tensor.shape
+        
+        assert h==720 and w==1280, "invalid dimensions"
+
+        pad = torch.nn.ZeroPad2d([0,0, 8, 8])
+
+        sample_tensor = pad(sample_tensor)
+
+        return sample_tensor
+    
     
 class ToTensor(object):
     """
@@ -223,7 +239,7 @@ def read_sample(img_paths, t_index=None):
 def data_generator(config, split, eval=False):
 
     if eval:
-        custom_transform = transforms.Compose([ResizeCrop(), ToTensor()])
+        custom_transform = transforms.Compose([ToTensor(), EvalPad()])
         t_sample = "NIL"
     elif split=="VAL":
         custom_transform = transforms.Compose([ResizeCrop(), ToTensor()])

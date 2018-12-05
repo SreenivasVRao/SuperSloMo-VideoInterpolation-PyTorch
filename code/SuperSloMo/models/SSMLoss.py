@@ -162,26 +162,32 @@ class SSMLosses(nn.Module):
     def get_reconstruction_loss(self, interpolated_image, target_image):
         return self.reconstr_loss_fn(interpolated_image, target_image)
 
-    def get_warp_loss(self, img_tensor, input_tensor, target_image):
+    def get_warp_loss(self, img_tensor, flow_tensor, input_tensor, output_tensor, target_image):
+
+        flow_01 = flow_tensor[:,0:2,  ...]
+        flow_10 = flow_tensor[:,2:4, ...]
+
+        img_0 = img_tensor[:,0:3,...]
+        img_1 = img_tensor[:,3:6,...]
+
+        flow_t1 = input_tensor[:, 6:8, ...] # Estimated flow t->1
+        flow_t0 = input_tensor[:, 8:10, ...] # Estimated flow t->0
+
+        pred_v_1t, pred_dflow_t1, pred_dflow_t0, pred_v_0t  = self.extract_outputs(output_tensor)
+
+        pred_flow_t1 = flow_t1 + pred_dflow_t1
+        pred_flow_t0 = flow_t0 + pred_dflow_t0
+
+        pred_img_0t = warp(img_0, pred_flow_t0) # backward warping to produce img at time t
+        pred_img_1t = warp(img_1, pred_flow_t1) # backward warping to produce img at time t
 
         loss_warp = 0
 
         if not self.cfg.getboolean("STAGE1","FREEZE"):
-            img_0 = img_tensor[:, 0:3, ...]
-            img_1 = img_tensor[:, 3:6, ...]
-            
-            warped_img_1t = input_tensor[:, 3:6, ...]
-            est_flow_t1 = input_tensor[:, 6:8, ...]
-            est_flow_t0 = input_tensor[:, 8:10, ...]
-            warped_img_0t = input_tensor[:, 10:13, ...]
-            
-            flow_01 = input_tensor[:, 16:18, ...]
-            flow_10 = input_tensor[:, 18:20, ...]
-        
-            loss_warp = self.warp_loss_1(warp(img_1, flow_01), img_0) + \
-                self.warp_loss_2(warp(img_0, flow_10), img_1) + \
-                self.warp_loss_3(warped_img_1t, target_image) + \
-                self.warp_loss_4(warped_img_0t, target_image)
+            loss_warp += self.warp_loss_1(warp(img_1, flow_01), img_0) + self.warp_loss_2(warp(img_0, flow_10), img_1)
+
+        if not self.cfg.getboolean("STAGE2", "FREEZE"):
+            loss_warp += self.warp_loss_3(pred_img_0t, target_image) + self.warp_loss_4(pred_img_1t, target_image)
 
         return loss_warp
 
@@ -197,12 +203,12 @@ class SSMLosses(nn.Module):
         batch_mean = loss_tensor.mean(dim=1)[:, None]
         return batch_mean
 
-    def forward(self, flowC_input, flowI_input, interpolated_image, target_image):
+    def forward(self, flowC_input, flowC_output, flowI_input, flowI_output, interpolated_image, target_image):
         lambda_r, lambda_p, lambda_w, lambda_s = self.loss_weights
 
         loss_reconstr = lambda_r * self.get_reconstruction_loss(interpolated_image, target_image)*255.0        
         loss_perceptual =lambda_p * self.get_perceptual_loss(interpolated_image*255.0, target_image*255.0)
-        loss_warp = lambda_w * self.get_warp_loss(flowC_input, flowI_input, target_image)*255.0
+        loss_warp = lambda_w * self.get_warp_loss(flowC_input, flowC_output, flowI_input, flowI_output, target_image)*255.0
 
         loss_reconstr = loss_reconstr.view(loss_reconstr.shape[0], -1).mean(dim=1)[:, None]
         loss_perceptual = loss_perceptual.view(loss_perceptual.shape[0], -1).mean(dim=1)[:, None]

@@ -136,7 +136,7 @@ class FullModel(nn.Module):
             self.writer.add_image(split, interpolation_result[0, [2,1,0], ...], iteration)
 
         if target_image is not None:
-            losses = self.loss(img_tensor, flowI_input, interpolation_result, target_image)
+            losses = self.loss(img_tensor, flow_tensor, flowI_input, flowI_output, interpolation_result, target_image)
             return losses
         
         return interpolation_result
