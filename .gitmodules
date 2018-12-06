@@ -1,0 +1,3 @@
+[submodule "code/SuperSloMo/models/CLSTM"]
+	path = code/SuperSloMo/models/CLSTM
+	url = https://github.com/SreenivasVRao/ConvLSTM_pytorch.git
