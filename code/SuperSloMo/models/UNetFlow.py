@@ -354,7 +354,7 @@ class UNetC(nn.Module):
         # block 6
         self.pool6 = avg_pool(kernel_size=2, stride=None, padding=0) # 1/32
 
-        self.conv6 = ConvBLSTM(in_channels=512, hidden_channels=512, kernel_size=(3, 3), num_layers=1, batch_first=True)
+        self.conv6 = ConvBLSTM(in_channels=512, hidden_channels=512, kernel_size=(3, 3), num_layers=2, batch_first=True)
 
         # self.conv6a = conv(in_planes=512, out_planes=512, kernel_size=3)
         # self.conv6b = conv(in_planes=512, out_planes=512, kernel_size=3)
