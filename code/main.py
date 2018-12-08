@@ -92,9 +92,8 @@ class SSMNet:
         """
         data_batch = data_batch.cuda().float()
         assert 1<=t_idx<=7, "Invalid time-step: "+str(t_idx)
-        img_0 = data_batch[:, 0, ...]
-        img_t = data_batch[:, 1, ...]
-        img_1 = data_batch[:, -1, ...]
+        image_tensor = data_batch[:, 0::2, ...] # [0, 2, 4, 6] indices = I0, I1, I2, I3
+        img_t = data_batch[:, 1::2, ...] # [1, 3, 5] indices = I4, I12, I20.
         t_interp = float(t_idx)/8
 
         if get_interpolation:
@@ -104,7 +103,7 @@ class SSMNet:
             return interpolation_result
         
         elif not get_interpolation:
-            losses = self.superslomo(img_0, img_1, dataset_info, t_interp, split=split, iteration=iteration, target_image=img_t)
+            losses = self.superslomo(image_tensor, dataset_info, t_interp, split=split, iteration=iteration, target_images=img_t, compute_loss=True)
             losses = losses.mean(dim=0) # averages the loss over the batch. Horrific code. [B, 4] -> [4]
             self.write_losses(losses, iteration, split)
             total_loss = losses[0]

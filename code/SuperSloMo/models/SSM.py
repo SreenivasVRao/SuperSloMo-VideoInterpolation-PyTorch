@@ -8,6 +8,7 @@ import logging
 
 log = logging.getLogger(__name__)
 
+
 class FullModel(nn.Module):
 
     def __init__(self, cfg, writer):
@@ -71,30 +72,30 @@ class FullModel(nn.Module):
         else:
             log.info("Training stage2 model.")
             
-    def stage1_computations(self, img0, img1, dataset_info):
+    def stage1_computations(self, img_tensor, dataset_info):
         """
         Refer to PWC-Net repo for more details.
         :param img0, img1: torch tensor BGR (0, 255.0)
         :return: output from flowC model, multiplied by 20
         """
 
-        input_pair_01 = torch.cat([img0, img1], dim=1)
-        input_pair_10 = torch.cat([img1, img0], dim=1)
-        img_tensor = input_pair_01
-
-        if self.cfg.get("STAGE1","MODEL")=="PWC":
-
-            est_flow_01 = self.stage1_model(input_pair_01)
-            est_flow_10 = self.stage1_model(input_pair_10)
-
-            flow_tensor = torch.cat([est_flow_01, est_flow_10], dim=1)
-
-            flow_tensor = self.post_process_flow(flow_tensor, dataset_info)
+        if self.cfg.get("STAGE1", "MODEL") == "PWC":
+            raise NotImplementedError("PWC Net not implemented.")
+            # input_pair_01 = torch.cat([img0, img1], dim=1)
+            # input_pair_10 = torch.cat([img1, img0], dim=1)
+            # img_tensor = input_pair_01
+            #
+            # est_flow_01 = self.stage1_model(input_pair_01)
+            # est_flow_10 = self.stage1_model(input_pair_10)
+            #
+            # flow_tensor = torch.cat([est_flow_01, est_flow_10], dim=1)
+            #
+            # flow_tensor = self.post_process_flow(flow_tensor, dataset_info)
 
         elif self.cfg.get("STAGE1", "MODEL") in ["UNET", "UNETA", "UNETC"]:
-            flow_tensor = self.stage1_model(input_pair_01)
+            flow_tensor = self.stage1_model(img_tensor)
 
-        return img_tensor, flow_tensor
+        return flow_tensor
 
     def post_process_flow(self, flow_tensor, dataset_info):
         """
@@ -117,29 +118,58 @@ class FullModel(nn.Module):
 
         return upsampled_flow
 
-    def forward(self, image_0, image_1, dataset_info, t_interp, target_image=None,
-                output_buffer=None, split=None, iteration=None):
-        
-        img_tensor, flowC_out = self.stage1_computations(image_0, image_1, dataset_info)
-        if self.cross_skip:
-            encoder_out, flow_tensor = flowC_out
-        else:
-            flow_tensor = flowC_out
-            encoder_out = None
+    def forward(self, image_tensor, dataset_info, t_interp, target_images=None,
+                split=None, iteration=None, compute_loss=False):
+        img0 = image_tensor[:, 0, ...]
+        img1 = image_tensor[:, 1, ...]
+        img2 = image_tensor[:, 2, ...]
+        img3 = image_tensor[:, 3, ...]
 
-        flowI_input = self.stage2_model.compute_inputs(img_tensor, flow_tensor, t=t_interp)
-        flowI_output = self.stage2_model(flowI_input, encoder_out)
-        interpolation_result = self.stage2_model.compute_output_image(img_tensor, flowI_input,
-                                                                      flowI_output, t=t_interp)
-        
+        img_01 = torch.cat([img0, img1], dim=1)
+        img_12 = torch.cat([img1, img2], dim=1)
+        img_23 = torch.cat([img2, img3], dim=1)
+
+        flowC_outputs = self.stage1_model(img_01, img_12, img_23)
+
+        combined_encoding = []
+        stage2_inputs = []
+
+        for idx, img_pair in enumerate([img_01, img_12, img_23]):
+            stage1_encoding, flow_tensor = flowC_outputs[idx]
+            input_tensor = self.stage2_model.compute_inputs(img_pair, flow_tensor, t=t_interp)
+            stage2_inputs.append(input_tensor)
+            combined_encoding.append(stage1_encoding)
+
+        x01, x12, x23 = stage2_inputs
+
+        flowI_outputs = self.stage2_model(x01, x12, x23, combined_encoding)
+
+        b = image_tensor.shape[0]
+
+        losses = torch.zeros([b, 4]).cuda()
+
+        img_t = []
+
+        for idx, img_pair in enumerate([img_01, img_12, img_23]):
+            _, flowI_out = flowI_outputs[idx]
+            flowI_in = stage2_inputs[idx]
+            interpolation_result = self.stage2_model.compute_output_image(img_pair, flowI_in,
+                                                                          flowI_out, t=t_interp)
+
+            if compute_loss and target_images is not None:
+                flow_tensor = flowC_outputs[idx][1]
+                target = target_images[:, idx, ...]
+                losses += self.loss(img_pair, flow_tensor, flowI_in, flowI_out, interpolation_result, target)
+            else:
+                img_t.append(interpolation_result)
+
         if iteration % 100 == 0:
-            self.writer.add_image(split, interpolation_result[0, [2,1,0], ...], iteration)
+            self.writer.add_image(split, interpolation_result[0, [2, 1, 0], ...], iteration)
 
-        if target_image is not None:
-            losses = self.loss(img_tensor, flow_tensor, flowI_input, flowI_output, interpolation_result, target_image)
+        if compute_loss:
             return losses
-        
-        return interpolation_result
+
+        return img_t
 
         
 def full_model(config, writer):
@@ -177,7 +207,7 @@ if __name__ == '__main__':
     logging.basicConfig(filename=args.log, level=logging.INFO)
     config.read(args.config)
 
-    log_dir = os.path.join(config.get("PROJECT","DIR"), "logs")
+    log_dir = os.path.join(config.get("PROJECT", "DIR"), "logs")
 
     os.makedirs(os.path.join(log_dir, args.expt, "plots"))
     os.makedirs(os.path.join(log_dir, args.expt, "images"))
@@ -185,7 +215,21 @@ if __name__ == '__main__':
     writer = SummaryWriter(os.path.join(log_dir, args.expt, "plots"))
 
     ssm_net = full_model(config, writer) # get the SSM Network.
+
+    x = torch.randn([3, 4, 3, 32, 32]).cuda()
+    x_t = torch.randn([3, 3, 3, 32, 32]).cuda()
+
     ssm_net.cuda()
+
+    batch_losses = ssm_net(x, (None, None), 0.5, target_images=x_t,
+                split="TRAIN", iteration=1, compute_loss=True)
+    avg_losses = batch_losses.mean(dim=0)
+
+    mean_loss = avg_losses[0]
+    mean_loss.backward()
+
+    exit(0)
+
     ssm_net.eval()
 
     info = adobe_240fps.get_data_info(config, "VAL")

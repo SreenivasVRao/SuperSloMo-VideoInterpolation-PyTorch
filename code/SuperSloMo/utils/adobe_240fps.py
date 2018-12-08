@@ -59,21 +59,21 @@ class Reader(Dataset):
         if self.split=="TRAIN" and np.random.randint(0, 2)==1:
             image_list = image_list[::-1]
 
-        if n_frames == 9:
-            pass
+        # if n_frames == 9:
+        #     pass
 
-        elif n_frames < 12:
-            start_idx = np.random.randint(0, n_frames - 9+1) # random starting point to get 9 frames.
-            image_list = image_list[start_idx: start_idx + 9]
+        # elif n_frames < 12:
+        #     start_idx = np.random.randint(0, n_frames - 9+1) # random starting point to get 9 frames.
+        #     image_list = image_list[start_idx: start_idx + 9]
 
-        elif n_frames >= 12:
-            subset = np.random.randint(0, n_frames-12+1) # random starting point to get subset of 12 frames.
-            image_list = image_list[subset:subset+12]
+        # elif n_frames >= 12:
+        #     subset = np.random.randint(0, n_frames-12+1) # random starting point to get subset of 12 frames.
+        #     image_list = image_list[subset:subset+12]
 
-            start_idx = np.random.randint(0, 3+1) # random starting point to get subset of 9 frames.
-            image_list = image_list[start_idx:start_idx+9]
+        #     start_idx = np.random.randint(0, 3+1) # random starting point to get subset of 9 frames.
+        #     image_list = image_list[start_idx:start_idx+9]
 
-        assert len(image_list)==9, "Something went wrong."
+        assert len(image_list)==25, "Something went wrong."
 
         return image_list
 
@@ -108,7 +108,10 @@ class Reader(Dataset):
         """
 
         img_paths = self.clips[idx]
-        img_paths = self.get_required_images(img_paths)
+
+        if self.split=="TRAIN" and np.random.randint(0, 2)==1:
+            img_paths = img_paths[::-1]
+        # img_paths = self.get_required_images(img_paths)
     
         return img_paths
 
@@ -201,10 +204,12 @@ def collate_data(aBatch, custom_transform, t_sample):
     """
 
     if t_sample=="NIL":
+        raise NotImplementedError
         t_index = None
     elif t_sample=="FIXED":
-        t_index = 4
+        t_index = [0, 4, 8, 12, 16, 20, 24]
     elif t_sample=="RANDOM":
+        raise NotImplementedError
         t_index = np.random.randint(1, 8) #uniform sampling
     else:
         raise Exception, "Invalid sampling argument."
@@ -215,13 +220,14 @@ def collate_data(aBatch, custom_transform, t_sample):
         frame_buffer[idx] = custom_transform(a_buffer)
 
     frame_buffer = torch.stack(frame_buffer)
-    
-    return frame_buffer, t_index
 
+    if t_sample=="FIXED":
+        return frame_buffer, 4 # middle index. lol such bad code.
     
 def read_sample(img_paths, t_index=None):
     if t_index:
-        img_paths = [img_paths[0], img_paths[t_index], img_paths[-1]]
+        img_paths = [img_paths[idx] for idx in t_index]
+        
     img = cv2.imread(img_paths[0])
     h, w, c = img.shape
     frames = np.zeros([len(img_paths), h, w, c])  # images are sometimes flipped for vertical videos.

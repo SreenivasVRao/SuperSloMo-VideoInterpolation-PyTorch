@@ -108,7 +108,8 @@ log = logging.getLogger(__name__)
 
 #         self.conv11a = conv(in_planes=64, out_planes=32, kernel_size=3)
 #         self.conv11b = nn.Sequential(nn.ReplicationPad2d(1),
-#                                        nn.Conv2d(in_channels=32, out_channels=out_channels, kernel_size=3, stride=1, padding=0, dilation=1, bias=True))
+#                                        nn.Conv2d(in_channels=32, out_channels=out_channels, kernel_size=3, stride=1,
+#                                        padding=0, dilation=1, bias=True))
 
 
 #         # for m in self.modules():
@@ -297,11 +298,10 @@ log = logging.getLogger(__name__)
 #         return pred_img_t
 
 
-
 ###############################################
 # Concatenative Skip connections UNet module. #
 ###############################################
-    
+
 
 class UNetC(nn.Module):
 
@@ -313,7 +313,7 @@ class UNetC(nn.Module):
         # skip connection from stage1 to stage2
         self.build_model(in_channels, out_channels)
         self.squash = nn.Sigmoid()
-        
+
     def build_model(self, in_channels, out_channels):
         """
         :param in_channels: Number of channels for input tensor.
@@ -353,8 +353,11 @@ class UNetC(nn.Module):
 
         # block 6
         self.pool6 = avg_pool(kernel_size=2, stride=None, padding=0) # 1/32
-        self.conv6a = conv(in_planes=512, out_planes=512, kernel_size=3)
-        self.conv6b = conv(in_planes=512, out_planes=512, kernel_size=3)
+
+        self.conv6 = ConvBLSTM(in_channels=512, hidden_channels=512, kernel_size=(3, 3), num_layers=1, batch_first=True)
+
+        # self.conv6a = conv(in_planes=512, out_planes=512, kernel_size=3)
+        # self.conv6b = conv(in_planes=512, out_planes=512, kernel_size=3)
 
         # block 7
 
@@ -407,21 +410,15 @@ class UNetC(nn.Module):
         
         self.final_conv = nn.Conv2d(in_channels=32, out_channels=out_channels, kernel_size=3, stride=1, padding=1, dilation=1, bias=True)
 
-    def forward(self, flowI_input, stage1_encoder_output=None):
+    def encoder(self, img_tensor):
         """
-        :param input_tensor: input: N,16, H, W,
-        batch_size = N
-        :param stage1_encoder_output: if skip connection from stage1 goes to stage2.
-
-        :return: output_tensor: N, 5, H, W, C
-        interpolation result
-
+        :param img_tensor: Two images to encode.
+        :return: Encoder Features extracted from the images.
         """
-        
         if self.verbose:
-            log.info("Input: " + str(flowI_input.shape))
+            log.info("Input: " + str(img_tensor.shape))
 
-        conv1a_out = self.conv1a(flowI_input)
+        conv1a_out = self.conv1a(img_tensor)
         conv1b_out = self.conv1b(conv1a_out)
 
         if self.verbose:
@@ -455,74 +452,124 @@ class UNetC(nn.Module):
         if self.verbose:
             log.info("Output Block 5: "+str(conv5b_out.shape))
 
-        pool6_out  = self.pool6(conv5b_out)
-        conv6a_out = self.conv6a(pool6_out)
-        conv6b_out = self.conv6b(conv6a_out)
+        pool6_out = self.pool6(conv5b_out)
+
+        return conv1b_out, conv2b_out, conv3b_out, conv4b_out, conv5b_out, pool6_out
+
+    def decoder(self, input_tensor, encoder_outputs, stage1_encoder_output=None):
+        """
+        :param input_tensor: output of LSTM.
+        :param encoder_outputs: features from the encoder stages.
+        :param stage1_encoder_output: Connection between stage1 and stage2.
+        :return: Final result of the UNet as B, C, H, W tensor.
+        """
+
+        conv6_out = input_tensor
+        conv1b_out, conv2b_out, conv3b_out, conv4b_out, conv5b_out, _ = encoder_outputs
 
         if self.verbose:
-            log.info("Output Block 6: "+str(conv6b_out.shape))
+            log.info("Output Block 6: " + str(conv6_out.shape))
 
-        if self.cross_skip_connect and self.stage==2:
-            concat_out = torch.cat([conv6b_out, stage1_encoder_output], dim=1)
+        if self.cross_skip_connect and self.stage == 2:
+            concat_out = torch.cat([conv6_out, stage1_encoder_output], dim=1)
             # concatenate encoder outputs
-            
+
             conv7a_in = self.upsample7(concat_out)
-            #upsample everything            
-        else: # only upsample and concatenate.
-            conv7a_in = self.upsample7(conv6b_out)
-            
+            # upsample everything
+        else:  # only upsample and concatenate.
+            conv7a_in = self.upsample7(conv6_out)
+
         conv7a_out = self.conv7a(conv7a_in)
         conv7b_out = self.conv7b(conv7a_out)
 
         if self.verbose:
-            log.info("Output Block 7: "+str(conv7b_out.shape))
-            
+            log.info("Output Block 7: " + str(conv7b_out.shape))
+
         conv8a_in = torch.cat([conv7b_out, conv5b_out], dim=1)
         conv8a_in = self.upsample8(conv8a_in)
-        
+
         conv8a_out = self.conv8a(conv8a_in)
         conv8b_out = self.conv8b(conv8a_out)
 
         if self.verbose:
-            log.info("Output Block 8: "+str(conv8b_out.shape))
-        
-        conv9a_in = torch.cat([conv8b_out, conv4b_out], dim=1)            
+            log.info("Output Block 8: " + str(conv8b_out.shape))
+
+        conv9a_in = torch.cat([conv8b_out, conv4b_out], dim=1)
         conv9a_in = self.upsample9(conv9a_in)
 
         conv9a_out = self.conv9a(conv9a_in)
         conv9b_out = self.conv9b(conv9a_out)
 
         if self.verbose:
-            log.info("Output Block 9: "+str(conv9b_out.shape))
+            log.info("Output Block 9: " + str(conv9b_out.shape))
 
         conv10a_in = torch.cat([conv9b_out, conv3b_out], dim=1)
         conv10a_in = self.upsample10(conv10a_in)
-        
+
         conv10a_out = self.conv10a(conv10a_in)
         conv10b_out = self.conv10b(conv10a_out)
-        
+
         if self.verbose:
-            log.info("Output Block 10: "+str(conv10b_out.shape))
-        
-        conv11a_in = torch.cat([conv10b_out, conv2b_out], dim=1)   
+            log.info("Output Block 10: " + str(conv10b_out.shape))
+
+        conv11a_in = torch.cat([conv10b_out, conv2b_out], dim=1)
         conv11a_in = self.upsample11(conv11a_in)
-        
+
         conv11a_out = self.conv11a(conv11a_in)
         conv11b_out = self.conv11b(conv11a_out)
 
         fuse_in = torch.cat([conv11b_out, conv1b_out], dim=1)
         fuse_out = self.fuse_conv(fuse_in)
-        
-        final_out = self.final_conv(fuse_out)
-        
-        if self.verbose:
-            log.info("Output Block 11: "+str(final_out.shape))
 
-        if self.cross_skip_connect and self.stage==1:
-            encoder_output = conv6b_out
+        final_out = self.final_conv(fuse_out)
+
+        if self.verbose:
+            log.info("Output Block 11: " + str(final_out.shape))
+
+        if self.cross_skip_connect and self.stage == 1:
+            encoder_output = conv6_out
             return encoder_output, final_out
         else:
-            return final_out
+            return None, final_out
+
+    def forward(self, x01, x12, x23, stage1_encoder_output=None):
+        """
+
+        :param x01,x12, x23: input tensors -> B, C_in, H, W
+        :param stage1_encoder_output: if skip connection from stage1 goes to stage2.
+        :return: T tuples with <(B, C_6, H, W) tensor, (B, C_out, H, W)> in case of cross stage skip connection.
+        else T tuples with <None, (B, C_out, H, W)> in case of cross stage skip connection.
+        :return:
+        """
+
+        e_1 = self.encoder(x01)  # encodes each input tensor.  e_i = tuple of all encodings.
+        e_2 = self.encoder(x12)
+        e_3 = self.encoder(x23)
+
+        pool6_out_1 = e_1[-1]  # gets the last encoder's outputs.
+        pool6_out_2 = e_2[-1]
+        pool6_out_3 = e_3[-1]
+
+        h = self.conv6(pool6_out_1, pool6_out_2, pool6_out_3)
+        # the CBLSTM which handles 3 inputs.
+
+        conv6_out_1 = h[:, 0, ...]  # each time step of the CBLSTM.
+        conv6_out_2 = h[:, 1, ...]
+        conv6_out_3 = h[:, 2, ...]
+
+        if self.cross_skip_connect and self.stage == 2:
+            e1_stage1 = stage1_encoder_output[0]
+            e2_stage1 = stage1_encoder_output[1]
+            e3_stage1 = stage1_encoder_output[2]
+
+        else:
+            e1_stage1 = e2_stage1 = e3_stage1 = None
+
+        decoder_out_1 = self.decoder(conv6_out_1, e_1, e1_stage1)
+        decoder_out_2 = self.decoder(conv6_out_2, e_2, e2_stage1)
+        decoder_out_3 = self.decoder(conv6_out_3, e_3, e3_stage1)
+
+        return decoder_out_1, decoder_out_2, decoder_out_3
 
     def compute_inputs(self, img_tensor, flow_pred_tensor, t):
         """
