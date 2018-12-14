@@ -204,7 +204,6 @@ def collate_data(aBatch, custom_transform, t_sample):
     """
 
     if t_sample=="NIL":
-        raise NotImplementedError
         t_index = None
     elif t_sample=="FIXED":
         t_index = [0, 4, 8, 12, 16, 20, 24]
@@ -223,6 +222,12 @@ def collate_data(aBatch, custom_transform, t_sample):
 
     if t_sample=="FIXED":
         return frame_buffer, 4 # middle index. lol such bad code.
+
+    else:
+        return frame_buffer, t_index
+
+
+
     
 def read_sample(img_paths, t_index=None):
     if t_index:

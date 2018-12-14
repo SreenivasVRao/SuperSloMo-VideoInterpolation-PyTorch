@@ -11,7 +11,7 @@ log = logging.getLogger(__name__)
 
 class FullModel(nn.Module):
 
-    def __init__(self, cfg, writer):
+    def __init__(self, cfg, writer=None):
         super(FullModel, self).__init__()
         self.cfg = cfg
         self.writer = writer
@@ -163,165 +163,18 @@ class FullModel(nn.Module):
             else:
                 img_t.append(interpolation_result)
 
-        if iteration % 100 == 0:
+        if iteration % 100 == 0 and self.writer is not None:
             self.writer.add_image(split, interpolation_result[0, [2, 1, 0], ...], iteration)
 
         if compute_loss:
             return losses
 
-        return img_t
+        return img_t[1] # middle result.
 
         
-def full_model(config, writer):
+def full_model(config, writer=None):
     """
     Returns the SuperSloMo model with config and writer as specified.
     """
     model = FullModel(config, writer)
     return model
-
-
-if __name__ == '__main__':
-
-    import ConfigParser, cv2, os, glob, logging
-    from argparse import ArgumentParser
-    from tensorboardX import SummaryWriter
-    from torch.autograd import Variable
-    import torch, numpy as np
-    import sys
-
-    sys.path.insert(0, "/home/sreenivasv/CS701/SuperSloMo-PyTorch/code/SuperSloMo/utils/")
-    import adobe_240fps
-
-    config = ConfigParser.RawConfigParser()
-    parser = ArgumentParser()
-
-    parser.add_argument("-c", "--config", required=True,
-                        default="config.ini",
-                        help="Path to config.ini file.")
-    parser.add_argument("--expt", required=True,
-                        help="Experiment Name.")
-
-    parser.add_argument("--log", required=True, help="Path to logfile.")
-
-    args = parser.parse_args()
-    logging.basicConfig(filename=args.log, level=logging.INFO)
-    config.read(args.config)
-
-    log_dir = os.path.join(config.get("PROJECT", "DIR"), "logs")
-
-    os.makedirs(os.path.join(log_dir, args.expt, "plots"))
-    os.makedirs(os.path.join(log_dir, args.expt, "images"))
-
-    writer = SummaryWriter(os.path.join(log_dir, args.expt, "plots"))
-
-    ssm_net = full_model(config, writer) # get the SSM Network.
-
-    x = torch.randn([3, 4, 3, 32, 32]).cuda()
-    x_t = torch.randn([3, 3, 3, 32, 32]).cuda()
-
-    ssm_net.cuda()
-
-    batch_losses = ssm_net(x, (None, None), 0.5, target_images=x_t,
-                split="TRAIN", iteration=1, compute_loss=True)
-    avg_losses = batch_losses.mean(dim=0)
-
-    mean_loss = avg_losses[0]
-    mean_loss.backward()
-
-    exit(0)
-
-    ssm_net.eval()
-
-    info = adobe_240fps.get_data_info(config, "VAL")
-    img_dir = os.path.join(log_dir, args.expt, "images")
-
-    # for idx in range(20):
-    #     fprefix = "/clip"+str(idx).zfill(3)+"_"
-    #     batch = next(samples).float().cuda()
-    #     img_0 = batch[:,  0, ...]
-    #     img_1 = batch[:, -1, ...]
-
-    #     img_0_np = img_0.permute(0, 2, 3, 1)[0,...] * 255.0
-    #     img_0_np = img_0_np.cpu().data.numpy()
-    #     img_1_np = img_1.permute(0, 2, 3, 1)[0,...] * 255.0
-    #     img_1_np = img_1_np.cpu().data.numpy()
-
-    #     cv2.imwrite(img_dir+fprefix+str(0).zfill(3)+".png", img_0_np)
-    #     cv2.imwrite(img_dir+fprefix+str(8).zfill(3)+".png", img_1_np)
-
-    #     for t_idx in range(1, 8):
-    #         t_interp = float(t_idx)/8
-    #         interpolation_result  = ssm_net(img_0, img_1, info, t_interp, "VAL", iteration=idx)
-    #         est_image_t = interpolation_result * 255.0
-    #         est_image_t = est_image_t.permute(0,2, 3, 1)[0, ...]
-    #         est_image_t = est_image_t.cpu().data.numpy()
-
-    #         cv2.imwrite(img_dir+fprefix+str(t_idx).zfill(3)+".png", est_image_t)
-
-
-    def get_image(path, flipFlag):
-        img = cv2.imread(path)
-        img = img/255.0
-        if flipFlag:
-            img = img.swapaxes(0, 1)
-        # img = cv2.resize(img, (640, 360))
-        img = Variable(torch.from_numpy(img))
-        img = img.cuda().float()
-        img = img[None, ...]
-        img = img.permute(0, 3, 1, 2) # bhwc => bchw
-        return img
-
-
-    for clip_idx in [39, 81]:#, 42, 51]:
-        fpath = "/mnt/nfs/work1/elm/hzjiang/Data/VideoInterpolation/Adobe240fps/Clips/clip_"+str(clip_idx).zfill(5)+"/"
-        images_list = glob.glob(os.path.join(fpath, "*.png"))
-        images_list.sort()
-        images_list = images_list[::8] # get 30 fps version.
-
-
-        img_0 = cv2.imread(images_list[0])
-        h,w,c = img_0.shape
-        vFlag = h>w # horizontal video => h<=w vertical video => w< h
-        h_start = np.random.randint(0, 720-704+1)
-
-        #h_start = np.random.randint(0, 1080-1024+1)
-        info=(704, 1280),(1.0, 1.0)
-
-        img_dir = os.path.join(log_dir, args.expt, "images", "clip_"+str(clip_idx).zfill(5))
-        os.makedirs(img_dir)
-        log.info("h w %s %s"%(h,w))
-        logging.info("H start: %s"%h_start)
-        logging.info("Interpolation beginning.")
-
-
-        count = 0
-        for iteration, im_pair in enumerate(zip(images_list[0:-1], images_list[1:])):
-            # if iteration > 20:
-            #     break
-            impath0, impath1= im_pair
-            log.info(iteration)
-            img_0 = get_image(impath0, vFlag)[:, :,  h_start:h_start+704, :]
-            img_1 = get_image(impath1, vFlag)[:, :,  h_start:h_start+704, :]
-
-            img_0_np = img_0 * 255.0
-            img_0_np = img_0_np.permute(0,2, 3, 1)[0, ...]
-            img_0_np = img_0_np.cpu().data.numpy()
-            cv2.imwrite(img_dir+"/clip_"+str(clip_idx).zfill(5)+"_"+str(count).zfill(3)+".png", img_0_np)
-            count+=1
-
-            for idx in range(1, 8):
-                t_interp = float(idx)/8
-                interpolation_result  = ssm_net(img_0, img_1, info, t_interp, "VAL", iteration=iteration)
-                est_image_t = interpolation_result * 255.0
-                est_image_t = est_image_t.permute(0,2, 3, 1)[0, ...]
-                est_image_t = est_image_t.cpu().data.numpy()
-                cv2.imwrite(img_dir+"/clip_"+str(clip_idx).zfill(5)+"_"+str(count).zfill(3)+".png", est_image_t)
-                count+=1
-
-        img_1_np = img_1 * 255.0
-        img_1_np = img_1_np.permute(0,2, 3, 1)[0, ...]
-        img_1_np = img_1_np.cpu().data.numpy()
-        cv2.imwrite(img_dir+"/clip_"+str(clip_idx).zfill(5)+"_"+str(count).zfill(3)+".png", img_1_np)
-        count+=1
-
-        logging.info("Interpolation complete.")

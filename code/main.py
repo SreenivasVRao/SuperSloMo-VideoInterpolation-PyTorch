@@ -90,20 +90,25 @@ class SSMNet:
         :return: if get_interpolation is set, returns interpolation result as BCHW Variable.
         otherwise returns the losses.
         """
-        data_batch = data_batch.cuda().float()
         assert 1<=t_idx<=7, "Invalid time-step: "+str(t_idx)
-        image_tensor = data_batch[:, 0::2, ...] # [0, 2, 4, 6] indices = I0, I1, I2, I3
-        img_t = data_batch[:, 1::2, ...] # [1, 3, 5] indices = I4, I12, I20.
         t_interp = float(t_idx)/8
 
         if get_interpolation:
+            image_tensor = data_batch[:, 0::8, ...] # [0, 2, 4, 6] indices = I0, I1, I2, I3
+            image_tensor = image_tensor.cuda().float()
             if iteration==1:
                 log.info("Getting only Interpolation Result.")
-            interpolation_result = self.superslomo(img_0, img_1, dataset_info, t_interp, split=split, iteration=iteration)
+            interpolation_result = self.superslomo(image_tensor, dataset_info, t_interp, split=split,
+                                                   iteration=iteration, compute_loss=False)
             return interpolation_result
         
         elif not get_interpolation:
-            losses = self.superslomo(image_tensor, dataset_info, t_interp, split=split, iteration=iteration, target_images=img_t, compute_loss=True)
+            image_tensor = data_batch[:, 0::2, ...] # [0, 2, 4, 6] indices = I0, I1, I2, I3
+            image_tensor = image_tensor.cuda().float()
+            img_t = data_batch[:, 1::2, ...] # [1, 3, 5] indices = I4, I12, I20.
+            img_t = img_t.cuda().float()
+            losses = self.superslomo(image_tensor, dataset_info, t_interp, split=split, iteration=iteration,
+                                     target_images=img_t, compute_loss=True)
             losses = losses.mean(dim=0) # averages the loss over the batch. Horrific code. [B, 4] -> [4]
             self.write_losses(losses, iteration, split)
             total_loss = losses[0]
@@ -175,41 +180,6 @@ class SSMNet:
 
         self.writer.close()
 
-    def compute_metrics(self, dataset, info, split):
-        """
-        Computes PSNR, Interpolation Error, and SSIM scores for the given split of the dataset.
-        :param dataset:
-        :return: avg PSNR, avg IE, avg SSIM
-        """
-        total_ssim = 0
-        total_IE = 0
-        total_PSNR = 0
-
-        nframes = 0
-
-        for iteration, a_batch in enumerate(dataset):
-            data_batch, _ = a_batch
-            data_batch = data_batch.cuda().float()
-            if iteration==1:
-                log.info(data_batch.shape)
-            for t_idx in range(1, 8):
-                est_image_t = self.forward_pass(data_batch, info, split, iteration, t_idx, get_interpolation=True)
-                gt_image_t = data_batch[:, t_idx, ...]
-                psnr_scores, IE_scores, ssim_scores = metrics_v2.get_scores(est_image_t, gt_image_t)
-                total_IE   += np.sum(IE_scores)
-                total_ssim += np.sum(ssim_scores)
-                total_PSNR += np.sum(psnr_scores)
-            n_interpolations = data_batch.shape[1]-2 # exclude i_0, i_1
-            nframes += data_batch.shape[0]*n_interpolations  # interpolates nframes Batch size - 2 frames (i0, i1)
-        log.info(data_batch.shape)
-
-        avg_IE = float(total_IE)/nframes
-        avg_ssim = float(total_ssim)/nframes
-        avg_PSNR = float(total_PSNR)/nframes
-
-        return avg_PSNR, avg_IE, avg_ssim
-
-
 if __name__ == '__main__':
 
     from argparse import ArgumentParser
@@ -255,7 +225,7 @@ if __name__ == '__main__':
     # adobe_val = adobe_240fps.data_generator(cfg, split="VAL", eval=True)
     # val_info = adobe_240fps.get_data_info(cfg, split="VAL")
     
-    # PSNR, IE, SSIM = ssm_net.compute_metrics(adobe_val, val_info, "VAL")
+    # PSNR, IE, SSIM = metrics_v2.compute_metrics(ssm_net, adobe_val, val_info, "VAL")
     # logging.info("ADOBE VAL: Average PSNR %.3f IE %.3f SSIM %.3f"%(PSNR, IE, SSIM))
     
 

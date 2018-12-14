@@ -550,7 +550,10 @@ class UNetC(nn.Module):
         pool6_out_2 = e_2[-1]
         pool6_out_3 = e_3[-1]
 
-        h = self.conv6(pool6_out_1, pool6_out_2, pool6_out_3)
+        clstm_input_fwd = torch.stack([pool6_out_1, pool6_out_2, pool6_out_3], dim=1)
+        clstm_input_rev = torch.stack([pool6_out_3, pool6_out_2, pool6_out_1], dim=1)
+
+        h = self.conv6(clstm_input_fwd, clstm_input_rev)
         # the CBLSTM which handles 3 inputs.
 
         conv6_out_1 = h[:, 0, ...]  # each time step of the CBLSTM.
