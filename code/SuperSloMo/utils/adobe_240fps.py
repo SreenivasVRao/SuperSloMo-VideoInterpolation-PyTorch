@@ -188,7 +188,7 @@ class ToTensor(object):
     Converts np 0-255 uint8 to 0-1 tensor
     """
     def __call__(self, sample):
-        sample = torch.from_numpy(sample.copy())/255.0
+        sample = torch.from_numpy(sample.copy()) # /255.0
         sample = sample.permute(0, 3, 1, 2) # n_frames, H W C -> n_frames, C, H, W
         return sample
 
