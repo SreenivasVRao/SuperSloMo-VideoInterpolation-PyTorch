@@ -163,8 +163,8 @@ class FullModel(nn.Module):
             else:
                 img_t.append(interpolation_result)
 
-        if iteration % 100 == 0 and self.writer is not None:
-            self.writer.add_image(split, interpolation_result[0, [2, 1, 0], ...], iteration)
+        # if iteration % 100 == 0 and self.writer is not None:
+        #     self.writer.add_image(split, interpolation_result[0, [2, 1, 0], ...], iteration)
 
         if compute_loss:
             return losses
