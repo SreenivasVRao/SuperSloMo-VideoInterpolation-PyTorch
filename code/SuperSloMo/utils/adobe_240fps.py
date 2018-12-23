@@ -7,6 +7,7 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 
 
+cv2.setNumThreads(0)
 log = logging.getLogger(__name__)
 
 

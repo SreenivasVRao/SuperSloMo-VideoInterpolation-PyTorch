@@ -201,6 +201,7 @@ if __name__ == '__main__':
 
     cfg = read_config(args.config)
     torch.manual_seed(cfg.getint("SEED","VALUE"))
+    torch.backends.cudnn.benchmark = True
     np.random.seed(cfg.getint("SEED","VALUE"))
     random.seed(cfg.getint("SEED", "VALUE"))
 
