@@ -16,6 +16,32 @@ def read_config(configpath='config.ini'):
     return config
 
 
+def resume_trainer(config, optimizer, scheduler):
+    conditions_1 = config.getboolean("STAGE1", "LOADPREV") and not config.getboolean("STAGE1", "FREEZE")
+    conditions_2 = config.getboolean("STAGE2", "LOADPREV") and not config.getboolean("STAGE2", "FREEZE")
+    if conditions_1:
+        ckpt_path = config.get("STAGE1", "WEIGHTS")
+    elif conditions_2:
+        ckpt_path = config.get("STAGE2", "WEIGHTS")
+    else:
+        return 0, optimizer, scheduler
+    
+    checkpoint = torch.load(ckpt_path)
+    optimizer.load_state_dict(checkpoint['optimizer'])
+    scheduler.load_state_dict(checkpoint['scheduler'])
+    epoch = checkpoint['epoch']
+    log.info("Resuming training from: %s"%epoch)
+
+    log.info("Scheduler: ")
+    log.info(scheduler.last_epoch)
+    log.info(scheduler.get_lr())
+    log.info("Optimizer: ")
+    for param_group in optimizer.param_groups:
+        log.info("Learning rate: %s"%param_group['lr'])
+        
+    return epoch, optimizer, scheduler
+    
+
 class SSMNet:
 
     def __init__(self, config, expt_name, message=None):
@@ -123,13 +149,17 @@ class SSMNet:
         optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.superslomo.parameters()),
                                      lr=self.learning_rate)        
         lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=self.lr_period, gamma=self.lr_decay)
-            
+
+        resume_epoch, optimizer, lr_scheduler = resume_trainer(self.cfg, optimizer, lr_scheduler)
+
+        start = max(resume_epoch, 1)
+        log.info("Starting from Epoch: %s"%start)
         iteration = 0
 
         train_info = adobe_240fps.get_data_info(self.cfg, split="TRAIN")
         # val_info = adobe_240fps.get_data_info(self.cfg, split="VAL")
 
-        for epoch in range(1, self.n_epochs+1):
+        for epoch in range(start, self.n_epochs+1):
             # shuffles the data on each epoch
             adobe_train_samples = adobe_240fps.data_generator(self.cfg, split="TRAIN")
             # adobe_val_samples = adobe_240fps.data_generator(self.cfg, split="VAL")

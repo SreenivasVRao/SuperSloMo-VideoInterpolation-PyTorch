@@ -155,13 +155,12 @@ class FullModel(nn.Module):
             flowI_in = stage2_inputs[idx]
             interpolation_result = self.stage2_model.compute_output_image(img_pair, flowI_in,
                                                                           flowI_out, t=t_interp)
-
-            if compute_loss and target_images is not None:
+            img_t.append(interpolation_result)
+            if compute_loss:
+                assert target_images is not None, "No target found for loss."
                 flow_tensor = flowC_outputs[idx][1]
                 target = target_images[:, idx, ...]
                 losses += self.loss(img_pair, flow_tensor, flowI_in, flowI_out, interpolation_result, target)
-            else:
-                img_t.append(interpolation_result)
 
         # if iteration % 100 == 0 and self.writer is not None:
         #     self.writer.add_image(split, interpolation_result[0, [2, 1, 0], ...], iteration)

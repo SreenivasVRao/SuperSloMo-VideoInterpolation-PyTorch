@@ -48,20 +48,21 @@ def warp(x, flo):
 
         vgrid = vgrid.permute(0,2,3,1)
         output = nn.functional.grid_sample(x, vgrid)
-        mask = Variable(torch.ones(x.size())).cuda()
+        # mask = Variable(torch.ones(x.size())).cuda()
 
 
-        mask = nn.functional.grid_sample(mask, vgrid)
+        # mask = nn.functional.grid_sample(mask, vgrid)
 
-        # if W==128:
-            # np.save('mask.npy', mask.cpu().data.numpy())
-            # np.save('warp.npy', output.cpu().data.numpy())
+        # # if W==128:
+        #     # np.save('mask.npy', mask.cpu().data.numpy())
+        #     # np.save('warp.npy', output.cpu().data.numpy())
 
-        mask[mask.data<0.9999] = 0
-        mask[mask.data>0] = 1
-        # mask[mask.detach()] = 0
+        # mask[mask.data<0.9999] = 0
+        # mask[mask.data>0] = 1
+        # # mask[mask.detach()] = 0
 
-        return output*mask
+        # return output*mask
+        return output
 
 
 def predict_flow(in_planes):
