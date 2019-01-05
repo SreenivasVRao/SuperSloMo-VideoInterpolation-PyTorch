@@ -4,7 +4,7 @@ import torchvision
 import torch
 import logging
 import numpy as np
-from layers import warp
+from .layers import warp
 
 log = logging.getLogger(__name__)
 
@@ -206,9 +206,9 @@ class SSMLosses(nn.Module):
     def forward(self, flowC_input, flowC_output, flowI_input, flowI_output, interpolated_image, target_image):
         lambda_r, lambda_p, lambda_w, lambda_s = self.loss_weights
 
-        loss_reconstr = lambda_r * self.get_reconstruction_loss(interpolated_image, target_image)# *255.0        
-        loss_perceptual =lambda_p * self.get_perceptual_loss(interpolated_image, target_image)
-        loss_warp = lambda_w * self.get_warp_loss(flowC_input, flowC_output, flowI_input, flowI_output, target_image)# *255.0
+        loss_reconstr = lambda_r * self.get_reconstruction_loss(interpolated_image, target_image)
+        loss_perceptual = lambda_p * self.get_perceptual_loss(interpolated_image, target_image)
+        loss_warp = lambda_w * self.get_warp_loss(flowC_input, flowC_output, flowI_input, flowI_output, target_image)
 
         loss_reconstr = loss_reconstr.view(loss_reconstr.shape[0], -1).mean(dim=1)[:, None]
         loss_perceptual = loss_perceptual.view(loss_perceptual.shape[0], -1).mean(dim=1)[:, None]
@@ -249,9 +249,3 @@ if __name__=='__main__':
     #     print param.requires_grad
     result.backward()
 
-    loss_smooth = SmoothnessLoss()
-    tensor_1 = torch.autograd.Variable(torch.randn([2, 2, 100, 100]), requires_grad=True).cuda()
-    tensor_2 = torch.autograd.Variable(torch.randn([2, 3, 100, 100]), requires_grad=True).cuda()
-    result = loss_smooth(tensor_1, tensor_2)
-    log.info(result.shape)
-    result.backward()

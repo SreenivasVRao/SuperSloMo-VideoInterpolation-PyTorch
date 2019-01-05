@@ -1,8 +1,8 @@
 import torch
-from torch.autograd import Variable
 import torch.nn as nn
 import torch.nn.functional as F
-from CLSTM.convlstm import ConvBLSTM
+from .CLSTM.convlstm import ConvBLSTM
+
 
 def conv(in_planes, out_planes, kernel_size=3, stride=1, padding=1, dilation=1):
     return nn.Sequential(
@@ -40,23 +40,30 @@ def warp(x, flo):
 
         if x.is_cuda:
             grid = grid.cuda()
-        vgrid = Variable(grid) + flo
+        vgrid = grid + flo
 
         # scale grid to [-1,1]
-        vgrid[:,0,:,:] = 2.0*vgrid[:,0,:,:]/max(W-1,1)-1.0
-        vgrid[:,1,:,:] = 2.0*vgrid[:,1,:,:]/max(H-1,1)-1.0
+        # Sreeni : PyTorch backward pass fails with the next two lines of code.
+
+        # vgrid[:, 0, :, :] = 2.0*vgrid[:,0,:,:]/max(W-1,1)-1.0
+        # vgrid[:, 1, :, :] = 2.0*vgrid[:,1,:,:]/max(H-1,1)-1.0
+
+        u_tmp = vgrid[:,0,:,:].clone()
+        v_tmp = vgrid[:,1,:,:].clone()
+
+        u_tmp = 2.0 * u_tmp / max(W - 1, 1) - 1.0
+        v_tmp = 2.0 * v_tmp / max(H - 1, 1) - 1.0
+
+        vgrid[:,0,:,:] = u_tmp
+        vgrid[:,1,:,:] = v_tmp
 
         vgrid = vgrid.permute(0,2,3,1)
         output = nn.functional.grid_sample(x, vgrid)
         # mask = Variable(torch.ones(x.size())).cuda()
-
-
         # mask = nn.functional.grid_sample(mask, vgrid)
-
         # # if W==128:
         #     # np.save('mask.npy', mask.cpu().data.numpy())
         #     # np.save('warp.npy', output.cpu().data.numpy())
-
         # mask[mask.data<0.9999] = 0
         # mask[mask.data>0] = 1
         # # mask[mask.detach()] = 0
@@ -71,3 +78,4 @@ def predict_flow(in_planes):
 
 def deconv(in_planes, out_planes, kernel_size=4, stride=2, padding=1):
     return nn.ConvTranspose2d(in_planes, out_planes, kernel_size, stride, padding, bias=True)
+

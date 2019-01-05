@@ -32,7 +32,7 @@ class Reader(Dataset):
         """
 
         fpath = self.cfg.get("ADOBE_DATA", split+"PATHS")
-        with open(fpath, "rb") as f:
+        with open(fpath, "r") as f:
             data = f.readlines()
             data = [d.strip() for d in data]
             
@@ -207,12 +207,13 @@ def collate_data(aBatch, custom_transform, t_sample):
     if t_sample=="NIL":
         t_index = None
     elif t_sample=="FIXED":
-        t_index = [0, 4, 8, 12, 16, 20, 24]
+        t_index = [0, 8, 12, 16, 24]
     elif t_sample=="RANDOM":
         raise NotImplementedError
         t_index = np.random.randint(1, 8) #uniform sampling
+        t_index = [0, 8, 8+t_index, 16, 24]
     else:
-        raise Exception, "Invalid sampling argument."
+        raise Exception("Invalid sampling argument.")
 
     frame_buffer = [read_sample(sample, t_index) for sample in aBatch]
     
@@ -226,8 +227,6 @@ def collate_data(aBatch, custom_transform, t_sample):
 
     else:
         return frame_buffer, t_index
-
-
 
     
 def read_sample(img_paths, t_index=None):

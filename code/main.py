@@ -1,17 +1,17 @@
-from SuperSloMo.models import SSM, SSMLoss
-from SuperSloMo.utils import adobe_240fps, metrics_v2
+from SuperSloMo.models import SSM
+from SuperSloMo.utils import adobe_240fps
 import numpy as np,  random
 import torch.optim
 import torch
 
 from tensorboardX import SummaryWriter
-import os, logging, ConfigParser
+import os, logging, configparser
 
 log = logging.getLogger(__name__)
 
 
 def read_config(configpath='config.ini'):
-    config = ConfigParser.RawConfigParser()
+    config = configparser.RawConfigParser()
     config.read(configpath)
     return config
 
@@ -74,7 +74,6 @@ class SSMNet:
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         log.info("Device: %s"%device)
         self.superslomo.to(device)
-        self.loss_module = SSMLoss.get_loss(config).cuda()
 
     def get_hyperparams(self):
         """
@@ -107,7 +106,7 @@ class SSMNet:
         self.writer.add_scalars('Warping_Loss', {split: loss_warp.item()}, iteration)
         # self.writer.add_scalars('Smoothness_Loss', {split: loss_smooth.item()}, iteration)
 
-    def forward_pass(self, data_batch, dataset_info, split, iteration, t_idx, get_interpolation=False):
+    def forward_pass(self, data_batch, dataset_info, split, iteration, t_idx):
         """
         :param data_batch: B H W C 0-255, np.uint8
         :param dataset_info: dataset object with corresponding split.
@@ -118,27 +117,20 @@ class SSMNet:
         """
         assert 1<=t_idx<=7, "Invalid time-step: "+str(t_idx)
         t_interp = float(t_idx)/8
+        data_batch = data_batch.cuda().float()
 
-        if get_interpolation:
-            image_tensor = data_batch[:, 0::8, ...] # [0, 2, 4, 6] indices = I0, I1, I2, I3
-            image_tensor = image_tensor.cuda().float()
-            if iteration==1:
-                log.info("Getting only Interpolation Result.")
-            interpolation_result = self.superslomo(image_tensor, dataset_info, t_interp, split=split,
-                                                   iteration=iteration, compute_loss=False)
-            return interpolation_result
+        mid_idx = data_batch.shape[1]//2
+        indices = list(range(data_batch.shape[1]))
+        indices.pop(mid_idx)
+        image_tensor = data_batch[:, indices, ...] # indices = I0, I1, I2, I3
+        img_t = data_batch[:, mid_idx, ...] # most intermediate frame.
         
-        elif not get_interpolation:
-            image_tensor = data_batch[:, 0::2, ...] # [0, 2, 4, 6] indices = I0, I1, I2, I3
-            image_tensor = image_tensor.cuda().float()
-            img_t = data_batch[:, 1::2, ...] # [1, 3, 5] indices = I4, I12, I20.
-            img_t = img_t.cuda().float()
-            losses = self.superslomo(image_tensor, dataset_info, t_interp, split=split, iteration=iteration,
-                                     target_images=img_t, compute_loss=True)
-            losses = losses.mean(dim=0) # averages the loss over the batch. Horrific code. [B, 4] -> [4]
-            self.write_losses(losses, iteration, split)
-            total_loss = losses[0]
-            return total_loss
+        losses = self.superslomo(image_tensor, dataset_info, t_interp, split=split, iteration=iteration,
+                                 target_images=img_t, compute_loss=True)
+        losses = losses.mean(dim=0) # averages the loss over the batch. Horrific code. [B, 4] -> [4]
+        self.write_losses(losses, iteration, split)
+        total_loss = losses[0]
+        return total_loss
 
     def train(self):
         """
@@ -210,6 +202,7 @@ class SSMNet:
 
         self.writer.close()
 
+
 if __name__ == '__main__':
 
     from argparse import ArgumentParser
@@ -241,24 +234,7 @@ if __name__ == '__main__':
 
     ssm_net.train()
 
-    log.info("Training complete.")
-    
-    # log.info("Evaluating metrics.")
-
-    # ssm_net.superslomo.eval()
-
-    # adobe_train = adobe_240fps.data_generator(cfg, split="TRAIN", eval=True)
-    # train_info = adobe_240fps.get_data_info(cfg, split="TRAIN")
-        
-    # PSNR, IE, SSIM = ssm_net.compute_metrics(adobe_train, train_info, "TRAIN")
-    # logging.info("ADOBE TRAIN: Average PSNR %.3f IE %.3f SSIM %.3f"%(PSNR, IE, SSIM))
-
-    # adobe_val = adobe_240fps.data_generator(cfg, split="VAL", eval=True)
-    # val_info = adobe_240fps.get_data_info(cfg, split="VAL")
-    
-    # PSNR, IE, SSIM = metrics_v2.compute_metrics(ssm_net, adobe_val, val_info, "VAL")
-    # logging.info("ADOBE VAL: Average PSNR %.3f IE %.3f SSIM %.3f"%(PSNR, IE, SSIM))
-    
+    log.info("Training complete.")    
 
 ##################################################
 # //Set the controls for the heart of the sun!// #
