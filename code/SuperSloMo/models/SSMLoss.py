@@ -1,10 +1,12 @@
+import sys
+sys.path.insert(0, "/home/sreenivasv/CS701/SuperSloMo-PyTorch/code/SuperSloMo/models/")
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
 import torch
 import logging
 import numpy as np
-from .layers import warp
+from layers import warp
 
 log = logging.getLogger(__name__)
 
@@ -55,8 +57,13 @@ class PerceptualLoss(nn.Module):
         return tensor_normed
 
     def forward(self, x_input, x_target):
-        # x_input = self.rescale(x_input)
-        # x_target = self.rescale(x_target)
+        
+        x_input = x_input[:, [2, 1, 0], ...]
+        x_target = x_target[:, [2, 1, 0], ...]
+        # BGR -> RGB
+        x_input = self.rescale(x_input)
+        x_target = self.rescale(x_target)
+        
         x_input = self.vgg_conv4_3(x_input)
         x_target = self.vgg_conv4_3(x_target)
         perceptual_loss = self.l2_loss(x_input, x_target)

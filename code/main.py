@@ -124,6 +124,12 @@ class SSMNet:
         indices.pop(mid_idx)
         image_tensor = data_batch[:, indices, ...] # indices = I0, I1, I2, I3
         img_t = data_batch[:, mid_idx, ...] # most intermediate frame.
+
+        if iteration==1:
+            log.info("Middle index :%s"%mid_idx)
+            log.info("Indices used:")
+            log.info(indices)
+            
         
         losses = self.superslomo(image_tensor, dataset_info, t_interp, split=split, iteration=iteration,
                                  target_images=img_t, compute_loss=True)

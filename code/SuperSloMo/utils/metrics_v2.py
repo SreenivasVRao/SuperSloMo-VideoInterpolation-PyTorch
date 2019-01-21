@@ -2,7 +2,7 @@ import numpy as np
 from skimage.measure import compare_ssim, compare_psnr
 import logging
 import torch
-import ConfigParser, cv2, os, glob
+import configparser, cv2, os, glob
 from argparse import ArgumentParser
 import sys
 sys.path.insert(0, "/home/sreenivasv/CS701/SuperSloMo-PyTorch/code/SuperSloMo/models/")
@@ -36,8 +36,8 @@ def get_scores(output_batch, target_batch):
     assert target_batch.shape[1:4]==(720, 1280, 3), "Dimensions are incorrect."
 
     for idx in range(B):
-        output_image = output_batch[idx, ...] * 255.0 # 1 H W C
-        target_image = target_batch[idx, ...] * 255.0 # 1 H W C
+        output_image = output_batch[idx, ...] # * 255.0 # 1 H W C
+        target_image = target_batch[idx, ...] # * 255.0 # 1 H W C
 
         output_image = output_image.cpu().data.numpy()
         target_image = target_image.cpu().data.numpy()
@@ -61,10 +61,6 @@ def interpolate_frames(current_window, vFlag, info):
 
     image_tensor = [get_image(impath, vFlag) for impath in current_images]
     image_tensor = torch.stack(image_tensor, dim=1)
-
-    img_0 = image_tensor[:, 1, ...] #[I0, I1, I2, I3]
-    img_1 = image_tensor[:, 2, ...] #[I0, I1, I2, I3]
-
     interpolation_results = []
 
     for idx in range(1, 8):
@@ -122,7 +118,7 @@ def process_one_clip(clip_id, fpath):
 
 def get_image(path, flipFlag):
     img = cv2.imread(path)
-    img = img/255.0
+    # img = img/255.0
     if flipFlag:
         img = img.swapaxes(0, 1)
     img =  torch.from_numpy(img)
@@ -149,7 +145,7 @@ def getargs():
 if __name__ == '__main__':
 
     args = getargs()
-    config = ConfigParser.RawConfigParser()
+    config = configparser.RawConfigParser()
     logging.basicConfig(filename=args.log, level=logging.INFO)
     config.read(args.config)
     
@@ -164,7 +160,7 @@ if __name__ == '__main__':
 
     clips = set()
 
-    with open(val_file, 'rb') as f:
+    with open(val_file, 'r') as f:
         data = f.readlines()
         data = [d.strip() for d in data]
         for d in data:
@@ -186,6 +182,8 @@ if __name__ == '__main__':
         video_IE.extend(IE_score)
         video_SSIM.extend(SSIM_score)
         log.info("Interpolation complete.")
+        log.info("Avg. PSNR: %.3f IE: %.3f SSIM: %.3f"%(np.mean(PSNR_score), np.mean(IE_score), np.mean(SSIM_score)))
+
 
     mean_avg_psnr = np.mean(video_PSNR)
     mean_avg_IE = np.mean(video_IE)

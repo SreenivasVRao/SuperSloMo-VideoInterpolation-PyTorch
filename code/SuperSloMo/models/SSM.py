@@ -1,5 +1,7 @@
-from .UNetFlow import get_model as get_unet_model
-from .SSMLoss import get_loss as get_ssm_loss
+import sys
+sys.path.insert(0, "/home/sreenivasv/CS701/SuperSloMo-PyTorch/code/SuperSloMo/models/")
+from UNetFlow import get_model as get_unet_model
+from SSMLoss import get_loss as get_ssm_loss
 import torch
 import torch.nn as nn
 import logging
@@ -120,17 +122,19 @@ class FullModel(nn.Module):
         images = list(img_tensor.split(dim=1, split_size=1))
         image_pairs = list(zip(images[:-1], images[1:]))
         image_pairs = [torch.cat([imgA, imgB], dim=2).squeeze() for imgA, imgB in image_pairs]
-
+        if len(image_pairs[0].shape)<4:  # bad code.
+            image_pairs = [img_pair[None, ...] for img_pair in image_pairs]
         image_pairs = torch.stack(image_pairs, dim=1)
+
         return image_pairs
 
     def forward(self, image_tensor, dataset_info, t_interp, target_images=None,
                 split=None, iteration=None, compute_loss=False):
 
         image_pairs = self.get_image_pairs(image_tensor)
+        
 
         T = image_pairs.shape[1]
-        print (T, "time steps.")
         flowC_outputs = self.stage1_model(image_pairs)
 
         combined_encoding = []
@@ -158,6 +162,9 @@ class FullModel(nn.Module):
         flowI_in = stage2_inputs[:, t, ...]
         img_pair = image_pairs[:, t, ...]
 
+        if iteration==1:
+            log.info("%s interpolation windows. Mid_idx: %s"%(T, t))
+        
         flow_tensor = flowC_outputs[t][1]
         interpolation_result = self.stage2_model.compute_output_image(img_pair, flowI_in,
                                                                       flowI_out, t=t_interp)

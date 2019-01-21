@@ -1,7 +1,10 @@
+import sys
+sys.path.insert(0, "/home/sreenivasv/CS701/SuperSloMo-PyTorch/code/SuperSloMo/models/")
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from .CLSTM.convlstm import ConvBLSTM
+from CLSTM.convlstm import ConvBLSTM
 
 
 def conv(in_planes, out_planes, kernel_size=3, stride=1, padding=1, dilation=1):

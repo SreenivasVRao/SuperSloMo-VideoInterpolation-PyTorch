@@ -6,7 +6,6 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 
-
 cv2.setNumThreads(0)
 log = logging.getLogger(__name__)
 
@@ -23,6 +22,7 @@ class Reader(Dataset):
         self.compute_scale_factors()
         self.clips = self.read_clip_list(split)
         self.split = split
+        self.reqd_images = 8 * (self.cfg.getint("TRAIN","N_FRAMES") -1 )+ 1
         # log.info(split+ ": Extracted clip list.")
 
     def read_clip_list(self, split):
@@ -50,33 +50,6 @@ class Reader(Dataset):
                 continue
         return clips
 
-    def get_required_images(self, image_list):
-        """
-        :param image_list: list of  frames in clip
-        :return: returns sample of 9 frames.
-        """
-        n_frames = len(image_list)
-        
-        if self.split=="TRAIN" and np.random.randint(0, 2)==1:
-            image_list = image_list[::-1]
-
-        # if n_frames == 9:
-        #     pass
-
-        # elif n_frames < 12:
-        #     start_idx = np.random.randint(0, n_frames - 9+1) # random starting point to get 9 frames.
-        #     image_list = image_list[start_idx: start_idx + 9]
-
-        # elif n_frames >= 12:
-        #     subset = np.random.randint(0, n_frames-12+1) # random starting point to get subset of 12 frames.
-        #     image_list = image_list[subset:subset+12]
-
-        #     start_idx = np.random.randint(0, 3+1) # random starting point to get subset of 9 frames.
-        #     image_list = image_list[start_idx:start_idx+9]
-
-        assert len(image_list)==25, "Something went wrong."
-
-        return image_list
 
     def compute_scale_factors(self):
         """
@@ -109,11 +82,14 @@ class Reader(Dataset):
         """
 
         img_paths = self.clips[idx]
+        if len(img_paths)>self.reqd_images:
+            start_idx = np.random.randint(0, len(img_paths)- self.reqd_images + 1)
+            img_paths = img_paths[start_idx:start_idx+self.reqd_images]
+        assert len(img_paths)==self.reqd_images, "Incorrect length of input sequence."
 
         if self.split=="TRAIN" and np.random.randint(0, 2)==1:
             img_paths = img_paths[::-1]
-        # img_paths = self.get_required_images(img_paths)
-    
+
         return img_paths
 
     
@@ -194,7 +170,7 @@ class ToTensor(object):
         return sample
 
 
-def collate_data(aBatch, custom_transform, t_sample):
+def collate_data(aBatch, custom_transform, t_sample, n_frames):
     """
     :param aBatch: List[List] B samples of 8 frames (frames given as paths)
     :param custom_transform: torchvision transform
@@ -207,7 +183,12 @@ def collate_data(aBatch, custom_transform, t_sample):
     if t_sample=="NIL":
         t_index = None
     elif t_sample=="FIXED":
-        t_index = [0, 8, 12, 16, 24]
+        # t_index = [0, 8, 12, 16, 24]
+        t_index = [i*8 for i in range(n_frames)]
+        interp_idx = int(np.mean(t_index))
+        t_index.append(interp_idx) # most intermediate frame to be interpolated.
+        t_index = sorted(t_index)
+
     elif t_sample=="RANDOM":
         raise NotImplementedError
         t_index = np.random.randint(1, 8) #uniform sampling
@@ -264,9 +245,12 @@ def data_generator(config, split, eval=False):
 
     dataset = Reader(config, split)
 
+    n_frames = config.getint("TRAIN", "N_FRAMES")
+    log.info("CLSTM trained with %s frame windows."%n_frames)
+
     adobe_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=n_workers,
                               worker_init_fn = lambda _: np.random.seed(int(torch.initial_seed()%(2**32 -1))),
-                              collate_fn = lambda batch: collate_data(batch, custom_transform, t_sample))
+                              collate_fn = lambda batch: collate_data(batch, custom_transform, t_sample, n_frames))
 
     for batch_sample in adobe_loader:        
         yield batch_sample
@@ -279,7 +263,7 @@ def get_data_info(config, split):
 
 
 if __name__ == '__main__':
-    import ConfigParser
+    import configparser
     import logging
     from argparse import ArgumentParser
     import numpy as np
@@ -292,49 +276,14 @@ if __name__ == '__main__':
 
     logging.basicConfig(filename=args.log, level=logging.INFO)
 
-    config = ConfigParser.RawConfigParser()
+    config = configparser.RawConfigParser()
     config.read(args.config)
     logging.info("Read config")
+    samples = data_generator(config, "TRAIN")
 
-    total_frames = 0
-    total_clips = 0
-    for split in ["TRAIN", "VAL"]:
-        clips = set([])
-        n_frames = 0
-        log.info(split)
-        dataset = Reader(config, split)
-        for each in dataset.clips:
-            n_frames += len(each)
-            impath = each[0]
-            clip = impath.split('/')[-2]
-            clip = int(clip.split("_")[-1])
-            clips.add(clip)
-        clips = list(clips)
-        clips = sorted(clips)
-        log.info(clips)
-
-        n_clips = len(dataset.clips)
-        log.info("N Frames: %s"%n_frames)
-        log.info("N Clips: %s"%n_clips)
-        log.info("Mean Clip Length:%s"%(float(n_frames)/n_clips))
-
-        total_frames+= n_frames
-        total_clips+= n_clips
-
-    log.info("Total Frames: %s"%total_frames)
-    log.info("Total Clips: %s"%total_clips)
-    log.info("Mean Clip Length :%s"%(float(total_frames)/total_clips))
-            
-            
-
-    
-
-    # samples = data_generator(config, "TRAIN")
-    # n_frames = 0
-    
-    # aBatch, t_idx = next(samples)
-    # log.info(aBatch.shape)
-    # log.info(t_idx)
+    aBatch, t_idx = next(samples)
+    log.info(aBatch.shape)
+    log.info(t_idx)
 
     # n_frames = aBatch.shape[0]*aBatch.shape[1]
     
