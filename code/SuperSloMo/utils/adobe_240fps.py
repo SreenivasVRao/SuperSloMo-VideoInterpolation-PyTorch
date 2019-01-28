@@ -12,7 +12,7 @@ log = logging.getLogger(__name__)
 
 class Reader(Dataset):
 
-    def __init__(self, cfg, split="TRAIN"):
+    def __init__(self, cfg, split="TRAIN", eval_mode=False):
         """
         :param cfg: Config file.
         :param split: TRAIN/VAL/TEST
@@ -24,6 +24,7 @@ class Reader(Dataset):
         self.split = split
         self.reqd_images = 8 * (self.cfg.getint("TRAIN","N_FRAMES") -1 )+ 1
         # log.info(split+ ": Extracted clip list.")
+        self.eval_mode = eval_mode
 
     def read_clip_list(self, split):
         """
@@ -82,11 +83,15 @@ class Reader(Dataset):
         """
 
         img_paths = self.clips[idx]
-        if len(img_paths)>self.reqd_images:
+        if len(img_paths)>self.reqd_images and not self.eval_mode:
             start_idx = np.random.randint(0, len(img_paths)- self.reqd_images + 1)
             img_paths = img_paths[start_idx:start_idx+self.reqd_images]
+        elif len(img_paths)>self.reqd_images and self.eval_mode:
+            mid_idx = len(img_paths)//2
+            start = mid_idx - self.reqd_images//2
+            end = start + self.reqd_images
+            img_paths = img_paths[start:end]
         assert len(img_paths)==self.reqd_images, "Incorrect length of input sequence."
-
         if self.split=="TRAIN" and np.random.randint(0, 2)==1:
             img_paths = img_paths[::-1]
 
@@ -181,7 +186,13 @@ def collate_data(aBatch, custom_transform, t_sample, n_frames):
     """
 
     if t_sample=="NIL":
-        t_index = None
+        t_index = [i*8 for i in range(n_frames)]
+        mid_idx = int(np.mean(t_index))
+        t1 = mid_idx - 3
+        t2 = t1 + 7
+        t_index.extend(range(t1, t2)) # intermediate frames to be interpolated.
+        t_index = sorted(t_index)
+        
     elif t_sample=="FIXED":
         # t_index = [0, 8, 12, 16, 24]
         t_index = [i*8 for i in range(n_frames)]
@@ -207,7 +218,7 @@ def collate_data(aBatch, custom_transform, t_sample, n_frames):
         return frame_buffer, 4 # middle index. lol such bad code.
 
     else:
-        return frame_buffer, t_index
+        return frame_buffer, None
 
     
 def read_sample(img_paths, t_index=None):
@@ -243,7 +254,7 @@ def data_generator(config, split, eval=False):
     batch_size = config.getint(split, "BATCH_SIZE")
     n_workers = config.getint("MISC", "N_WORKERS")
 
-    dataset = Reader(config, split)
+    dataset = Reader(config, split, eval)
 
     n_frames = config.getint("TRAIN", "N_FRAMES")
     log.info("CLSTM trained with %s frame windows."%n_frames)
@@ -279,7 +290,7 @@ if __name__ == '__main__':
     config = configparser.RawConfigParser()
     config.read(args.config)
     logging.info("Read config")
-    samples = data_generator(config, "TRAIN")
+    samples = data_generator(config, "TRAIN", eval=True)
 
     aBatch, t_idx = next(samples)
     log.info(aBatch.shape)
