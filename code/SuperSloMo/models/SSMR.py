@@ -205,14 +205,15 @@ if __name__ == "__main__":
         config = configparser.RawConfigParser()
         config.read(configpath)
         return config
-    cfg = read_config('/media/sreenivas/Data/UMASS/CS701/SuperSloMo-PyTorch/code/configs/test.ini')
+
+    cfg = read_config("/media/sreenivas/Data/UMASS/gypsum/code/configs/ssmr.ini")
     logging.basicConfig(filename="test.log", level=logging.INFO)
 
     ssm_net = full_model(cfg).cuda()
-    N = 8
-    test_in = torch.rand([1, N, 3, 224, 224]).cuda()
-    target = torch.rand([1, N-1, 3, 224, 224]).cuda()
-    loss_value = ssm_net(test_in, None, 0.5, target, split="TRAIN", iteration=1, compute_loss=True)
+    N = 4
+    test_in = torch.rand([1, N, 3, 64, 64]).cuda()
+    target = torch.rand([1, N-1, 3, 64, 64]).cuda()
+    _, loss_value = ssm_net(test_in, None, 0.5, target, split="TRAIN", iteration=1, compute_loss=True)
 
     x = loss_value.mean()
     x.backward()

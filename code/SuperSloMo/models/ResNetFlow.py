@@ -23,6 +23,7 @@ class FlowComputationModel(nn.Module):
         self.stage = stage
         self.cross_skip=cross_skip
         self.build_model(in_channels, out_channels)
+        self.verbose= False
 
         pix_mean = self.cfg.get('MODEL', 'PIXEL_MEAN').split(',')
         pix_mean = [float(p) for p in pix_mean]
@@ -47,6 +48,8 @@ class FlowComputationModel(nn.Module):
             log.info("Stage 1: ResNet18.")
             self.encoder = resnet18(in_channels=in_channels)
             encoder_dims = [64, 128, 256, 512]
+            decoder_dims = [512, 256, 128, 64, 64]
+
         elif self.cfg.get("STAGE1", "ENCODER") == "resnet34":
             raise NotImplementedError
             self.encoder = resnet34(
@@ -54,6 +57,7 @@ class FlowComputationModel(nn.Module):
                 temporal_downsampling_last_layer=temporal_downsampling_last_layer
             )
             encoder_dims = [64, 128, 256, 512]
+
         else:
             raise NotImplementedError('Not supported 3D encoder: {}'.format(self.cfg.get('STAGE1', 'ENCODER')))
 
@@ -61,80 +65,73 @@ class FlowComputationModel(nn.Module):
             log.info("Bottleneck Stage 1: CLSTM")
             self.bottleneck_layer = ConvBLSTM(in_channels=encoder_dims[-1], hidden_channels=encoder_dims[-1],
                                               kernel_size=(3, 3), num_layers=2, batch_first=True)
-
         elif self.cfg.get("MODEL", "BOTTLENECK") == "CGRU":
             log.info("Bottleneck Stage 1: CGRU")
             self.bottleneck_layer = ConvBGRU(in_channels=encoder_dims[-1], hidden_channels=encoder_dims[-1],
                                               kernel_size=(3, 3), num_layers=2, batch_first=True)
-
         elif self.cfg.get("MODEL", "BOTTLENECK")=="CONV":
             log.info("Bottleneck Stage 1: CONV")
             self.bottleneck_layer = nn.Sequential(
-                nn.Conv2d(encoder_dims[-1], encoder_dims[-1], kernel_size=3, bias=False),
+                nn.Conv2d(encoder_dims[-1], encoder_dims[-1], kernel_size=3, padding = 1, bias=False),
                 nn.ReLU(inplace=True),
-                nn.Conv2d(encoder_dims[-1], encoder_dims[-1], kernel_size=3, bias=False),
+                nn.Conv2d(encoder_dims[-1], encoder_dims[-1], kernel_size=3, padding = 1, bias=False),
                 nn.ReLU(inplace=True)
                 )
 
         # --------------------------------------
         # decoder
         # --------------------------------------
-        def conv3x3_norm_relu(inplanes, planes):
-            layers = []
-            layers.append(nn.Conv2d(inplanes, planes, kernel_size=3, padding=1))
-            layers.append(make_norm_layer(self.norm_type, planes))
-            layers.append(nn.ReLU())
-            return nn.Sequential(*layers)
 
+        # 1/16
+        self.conv7a = conv(in_planes=decoder_dims[0], out_planes=decoder_dims[0], kernel_size=3)
+        self.conv7b = conv(in_planes=decoder_dims[0], out_planes=decoder_dims[0], kernel_size=3)
+
+        # block 8
+
+        self.upsample8 = lambda x: F.upsample(x, size=(2 * x.shape[2], 2 * x.shape[3]),
+                                              mode='bilinear')  # 2 x 2 upsampling
+
+        # 1/8
+
+        self.conv8a = conv(in_planes=2*decoder_dims[0], out_planes=decoder_dims[1], kernel_size=3)
+        self.conv8b = conv(in_planes=decoder_dims[1], out_planes=decoder_dims[1], kernel_size=3)
+
+
+        # block 9
+        self.upsample9 = lambda x: F.upsample(x, size=(2 * x.shape[2], 2 * x.shape[3]),
+                                              mode='bilinear')  # 2 x 2 upsampling
+
+        # 1/4
+
+        self.conv9a = conv(in_planes=2*decoder_dims[1], out_planes=decoder_dims[2], kernel_size=3)
+        self.conv9b = conv(in_planes=decoder_dims[2], out_planes=decoder_dims[2], kernel_size=3)
+
+        # # block 10
+
+        self.upsample10 = lambda x: F.upsample(x, size=(2 * x.shape[2], 2 * x.shape[3]),
+                                               mode='bilinear')  # 2 x 2 upsampling
+
+        # 1/2
+
+        self.conv10a = conv(in_planes=2*decoder_dims[2], out_planes=decoder_dims[3], kernel_size=3)
+        self.conv10b = conv(in_planes=decoder_dims[3], out_planes=decoder_dims[3], kernel_size=3)
+
+        # block 11
+
+        self.upsample11 = lambda x: F.upsample(x, size=(2 * x.shape[2], 2 * x.shape[3]),
+                                               mode='bilinear')  # 2 x 2 upsampling
         # 1
-        self.fcn_type = self.cfg.get('MODEL', 'FCN_TYPE')
-        # out_channels = 3  # * (sample_duration + 1)
-        if self.fcn_type == '8s':
-            self.upscales = nn.ModuleList([
-                nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
-                nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
-                nn.Upsample(scale_factor=8, mode='bilinear', align_corners=False),
-            ])
-            self.preds = nn.ModuleList([
-                nn.Conv2d(d, out_channels, 1) for d in encoder_dims[:0:-1]
-            ])
-        elif self.fcn_type == '32s':
-            self.upscales = nn.ModuleList([
-                nn.Upsample(scale_factor=32, mode='bilinear', align_corners=False),
-            ])
-            self.preds = nn.ModuleList([
-                nn.Conv2d(encoder_dims[-1], out_channels, 1)
-            ])
-        elif self.fcn_type == '4s':
-            # UPerNet
-            # FPN Module
-            fpn_dim = self.cfg.getint('MODEL', 'FPN_DIM')
-            self.fpn_top = nn.Sequential(
-                nn.Conv2d(encoder_dims[-1], fpn_dim, kernel_size=1, bias=False),
-                make_norm_layer(self.norm_type, fpn_dim),
-                nn.ReLU(inplace=True)
-            )
-            fpn_inplanes = encoder_dims
-            self.fpn_in = []
-            for fpn_inplane in fpn_inplanes[:-1]:  # skip the top layer
-                self.fpn_in.append(nn.Sequential(
-                    nn.Conv2d(fpn_inplane, fpn_dim, kernel_size=1, bias=False),
-                    make_norm_layer(self.norm_type, fpn_dim),
-                    nn.ReLU(inplace=True)
-                ))
-            self.fpn_in = nn.ModuleList(self.fpn_in)
 
-            self.fpn_out = []
-            for i in range(len(fpn_inplanes) - 1):  # skip the top layer
-                self.fpn_out.append(nn.Sequential(
-                    conv3x3_norm_relu(fpn_dim, fpn_dim),
-                ))
-            self.fpn_out = nn.ModuleList(self.fpn_out)
+        self.conv11a = conv(in_planes=2*decoder_dims[3], out_planes=decoder_dims[4], kernel_size=3)
+        self.conv11b = conv(in_planes=decoder_dims[4], out_planes=decoder_dims[4], kernel_size=3)
 
-            self.conv_last = nn.Sequential(
-                conv3x3_norm_relu(len(fpn_inplanes) * fpn_dim, fpn_dim),
-                nn.Conv2d(fpn_dim, out_channels, kernel_size=1)
-            )
+        self.fuse_conv = conv(in_planes=2*decoder_dims[4], out_planes=decoder_dims[4]//2, kernel_size=3)
+
+        self.final_conv = nn.Conv2d(in_channels=decoder_dims[4]//2, out_channels=out_channels,
+                                    kernel_size=3, stride=1, padding=1, dilation=1, bias=True)
+
+        self.upsample12 = lambda x: F.upsample(x, size=(2 * x.shape[2], 2 * x.shape[3]),
+                                              mode='bilinear')  # 2 x 2 upsampling
 
     def apply_bottleneck(self, tensor_list):
         if self.cfg.get("MODEL", "BOTTLENECK") in ["CLSTM", "CGRU"]:
@@ -149,114 +146,72 @@ class FlowComputationModel(nn.Module):
 
         return output
 
-    def decode_input(self, input_tensor, encoder_outputs):
+    def decoder(self, input_tensor, encoder_outputs):
         """
-        :param input_tensor: bottleneck layer output from the ResNet encoder.
-        :param encoder_outputs: intermediate outputs of the ResNet.
-        :return:
+        :param input_tensor: output of LSTM.
+        :param encoder_outputs: features from the encoder stages.
+        :param stage1_encoder_output: Connection between stage1 and stage2.
+        :return: Final result of the UNet as B, C, H, W tensor.
         """
-        # ------------------------
-        # encoder
-        # ------------------------
-        # x1    # [1, 1/2, 1/2],        [1, 64, 4, 112, 112]
-        # x2    # [1, 1/4, 1/4],        [1, 64, 4, 56, 56]
-        # x3    # [1/2, 1/8, 1/8],      [1, 128, 2, 28, 28]
-        # x4    # [1/4, 1/16, 1/16],    [1, 256, 1, 14, 14]
-        # x5    # [1/4, 1/32, 1/32],    [1, 512, 1, 7, 7]
-        (x1, x2, x3, x4, x5) = encoder_outputs
 
-        # print('x1: ', x1.shape)
-        # print('x2: ', x2.shape)
-        # print('x3: ', x3.shape)
-        # print('x4: ', x4.shape)
-        # print('x5: ', x5.shape)
+        conv6_out = input_tensor
+        conv1b_out, conv2b_out, conv3b_out, conv4b_out, conv5b_out = encoder_outputs
 
-        # x5 = x5.mean(2)
 
-        if self.fcn_type == '8s':
-            x3 = x3.mean(2)
-            x4 = x4.mean(2)
-            feats = [x3, x4, x5]
-            out = 0
-            for i, feat in enumerate(feats[::-1]):
-                out = self.upscales[i](self.preds[i](feat) + out)
-            out = self.squash(out)
-        elif self.fcn_type == '32s':
-            feats = [x5]
-            out = 0
-            for i, feat in enumerate(feats[::-1]):
-                out = self.upscales[i](self.preds[i](feat) + out)
-            out = self.squash(out)
-        elif self.fcn_type == '4s':
-            # x2 = x2.mean(2)
-            # x3 = x3.mean(2)
-            # x4 = x4.mean(2)
-            conv_out = [x2, x3, x4, x5]
+        if self.verbose:
+            log.info("Output Block 6: " + str(conv6_out.shape))
 
-            # # Top-down
-            # p5 = self.RCNN_toplayer(c5)
-            # p4 = self._upsample_add(p5, self.RCNN_latlayer1(c4))
-            # p4 = self.RCNN_smooth1(p4)
-            # p3 = self._upsample_add(p4, self.RCNN_latlayer2(c3))
-            # p3 = self.RCNN_smooth2(p3)
-            # p2 = self._upsample_add(p3, self.RCNN_latlayer3(c2))
-            # p2 = self.RCNN_smooth3(p2)
+        # conv7a_in = self.upsample7(conv6_out)
 
-            # f = self.fpn_top(x5)
-            f = self.fpn_top(input_tensor)
-            fpn_feature_list = [f]
-            for i in reversed(range(len(conv_out) - 1)):
-                conv_x = conv_out[i]
-                conv_x = self.fpn_in[i](conv_x)  # lateral branch
+        conv7a_out = self.conv7a(conv6_out)
+        conv7b_out = self.conv7b(conv7a_out)
 
-                f = F.upsample(
-                    f, size=conv_x.size()[2:],
-                    mode='bilinear',
-                    align_corners=False
-                )  # top-down branch
-                f = conv_x + f
+        if self.verbose:
+            log.info("Output Block 7: " + str(conv7b_out.shape))
 
-                fpn_feature_list.append(self.fpn_out[i](f))
+        conv8a_in = torch.cat([conv7b_out, conv5b_out], dim=1)
+        conv8a_in = self.upsample8(conv8a_in)
 
-            fpn_feature_list.reverse()  # [P2 - P5]
-            output_size = fpn_feature_list[0].size()[2:]
-            fusion_list = [fpn_feature_list[0]]
-            for i in range(1, len(fpn_feature_list)):
-                fusion_list.append(F.upsample(
-                    fpn_feature_list[i],
-                    output_size,
-                    mode='bilinear', align_corners=False)
-                )
-            fusion_out = torch.cat(fusion_list, 1)
-            out = self.conv_last(fusion_out)
-            out = F.upsample(out, mode='bilinear', scale_factor=4, align_corners=False)
+        conv8a_out = self.conv8a(conv8a_in)
+        conv8b_out = self.conv8b(conv8a_out)
 
-        else:
-            raise RuntimeError('Not supported FCN type: {}'.format(self.fcn_type))
+        if self.verbose:
+            log.info("Output Block 8: " + str(conv8b_out.shape))
 
-        # print('x1: ', x1.shape)
-        # print('x2: ', x2.shape)
-        # print('x3: ', x3.shape)
-        # print('x4: ', x4.shape)
-        # print('x5: ', x5.shape)
+        conv9a_in = torch.cat([conv8b_out, conv4b_out], dim=1)
+        conv9a_in = self.upsample9(conv9a_in)
 
-        # # -------------------------
-        # # decoder
-        # # -------------------------
-        # x6_in = self.upsample6(x5)
-        # raw_out = self.out_conv(x6_in)
+        conv9a_out = self.conv9a(conv9a_in)
+        conv9b_out = self.conv9b(conv9a_out)
 
-        # batch_idxes = torch.LongTensor(range(raw_out.shape[0])).to(raw_out.device)
+        if self.verbose:
+            log.info("Output Block 9: " + str(conv9b_out.shape))
 
-        # r = raw_out[batch_idxes, 3 * target_idxes].unsqueeze(1)
-        # g = raw_out[batch_idxes, 3 * target_idxes + 1].unsqueeze(1)
-        # b = raw_out[batch_idxes, 3 * target_idxes + 2].unsqueeze(1)
-        # out = torch.cat((r, g, b), dim=1)
+        conv10a_in = torch.cat([conv9b_out, conv3b_out], dim=1)
+        conv10a_in = self.upsample10(conv10a_in)
 
-        # convert pixel range
-        # out = (out - self.pix_mean) / self.pix_std
+        conv10a_out = self.conv10a(conv10a_in)
+        conv10b_out = self.conv10b(conv10a_out)
 
-        return out
+        if self.verbose:
+            log.info("Output Block 10: " + str(conv10b_out.shape))
+
+        conv11a_in = torch.cat([conv10b_out, conv2b_out], dim=1)
+        conv11a_in = self.upsample11(conv11a_in)
+
+        conv11a_out = self.conv11a(conv11a_in)
+        conv11b_out = self.conv11b(conv11a_out)
+
+        fuse_in = torch.cat([conv11b_out, conv1b_out], dim=1)
+        fuse_in = self.upsample12(fuse_in)
+        fuse_out = self.fuse_conv(fuse_in)
+
+        final_out = self.final_conv(fuse_out)
+
+        if self.verbose:
+            log.info("Output Block 11: " + str(final_out.shape))
+
+        return final_out
 
     def forward(self, input_tensor):
         """
@@ -288,7 +243,7 @@ class FlowComputationModel(nn.Module):
         for t in range(T):
             h_t = h[:, t, ...]
             e = encodings[t]
-            d = self.decode_input(h_t, e)
+            d = self.decoder(h_t, e)
             # bottleneck output, and skip connections sent to decoder.
             decodings.append((h_t, d))
 
@@ -304,6 +259,7 @@ class FlowInterpolationModel(nn.Module):
         self.stage = stage
         self.cross_skip_connect = cross_skip
         self.build_model(in_channels, out_channels)
+        self.verbose= False
 
         pix_mean = self.cfg.get('MODEL', 'PIXEL_MEAN').split(',')
         pix_mean = [float(p) for p in pix_mean]
@@ -318,7 +274,7 @@ class FlowInterpolationModel(nn.Module):
 
     def build_model(self, in_channels, out_channels):
         self.norm_type = self.cfg.get('MODEL', 'NORM_TYPE')
-        assert self.norm_type.lower() == "bn", "Unsupported normalization method: %s"%self.norm_type
+        assert self.norm_type.lower() == "bn", "Unsupported normalization method: %s" % self.norm_type
 
         # --------------------------------------
         # encoder
@@ -329,6 +285,7 @@ class FlowInterpolationModel(nn.Module):
             log.info("Stage 2: ResNet18.")
             self.encoder = resnet18(in_channels=in_channels)
             encoder_dims = [64, 128, 256, 512]
+            decoder_dims = [512, 256, 128, 64, 64]
 
         elif self.cfg.get("STAGE2", "ENCODER") == "resnet34":
             raise NotImplementedError
@@ -337,86 +294,157 @@ class FlowInterpolationModel(nn.Module):
                 temporal_downsampling_last_layer=temporal_downsampling_last_layer
             )
             encoder_dims = [64, 128, 256, 512]
+
         else:
             raise NotImplementedError('Not supported 3D encoder: {}'.format(self.cfg.get('STAGE1', 'ENCODER')))
 
-        if self.cfg.get("MODEL", "BOTTLENECK")=="CLSTM":
+        if self.cfg.get("MODEL", "BOTTLENECK") == "CLSTM":
             log.info("Bottleneck Stage 2: CLSTM")
             self.bottleneck_layer = ConvBLSTM(in_channels=encoder_dims[-1], hidden_channels=encoder_dims[-1],
                                               kernel_size=(3, 3), num_layers=2, batch_first=True)
         elif self.cfg.get("MODEL", "BOTTLENECK") == "CGRU":
-            log.info("Bottleneck Stage 1: CGRU")
+            log.info("Bottleneck Stage 2: CGRU")
             self.bottleneck_layer = ConvBGRU(in_channels=encoder_dims[-1], hidden_channels=encoder_dims[-1],
-                                              kernel_size=(3, 3), num_layers=2, batch_first=True)
-        elif self.cfg.get("MODEL", "BOTTLENECK")=="CONV":
+                                             kernel_size=(3, 3), num_layers=2, batch_first=True)
+        elif self.cfg.get("MODEL", "BOTTLENECK") == "CONV":
             log.info("Bottleneck Stage 2: CONV")
             self.bottleneck_layer = nn.Sequential(
-                nn.Conv2d(encoder_dims[-1], encoder_dims[-1], kernel_size=3, bias=False),
+                nn.Conv2d(encoder_dims[-1], encoder_dims[-1], kernel_size=3, padding=1, bias=False),
                 nn.ReLU(inplace=True),
-                nn.Conv2d(encoder_dims[-1], encoder_dims[-1], kernel_size=3, bias=False),
+                nn.Conv2d(encoder_dims[-1], encoder_dims[-1], kernel_size=3, padding=1, bias=False),
                 nn.ReLU(inplace=True)
-                )
+            )
 
         # --------------------------------------
         # decoder
         # --------------------------------------
-        def conv3x3_norm_relu(inplanes, planes):
-            layers = []
-            layers.append(nn.Conv2d(inplanes, planes, kernel_size=3, padding=1))
-            layers.append(make_norm_layer(self.norm_type, planes))
-            layers.append(nn.ReLU())
-            return nn.Sequential(*layers)
 
+        # 1/16
+
+        if self.cross_skip_connect:
+            self.conv7a = conv(in_planes=2 * decoder_dims[0], out_planes=decoder_dims[0], kernel_size=3)
+        else:
+            self.conv7a = conv(in_planes=decoder_dims[0], out_planes=decoder_dims[0], kernel_size=3)
+
+        self.conv7b = conv(in_planes=decoder_dims[0], out_planes=decoder_dims[0], kernel_size=3)
+
+        # block 8
+
+        self.upsample8 = lambda x: F.upsample(x, size=(2 * x.shape[2], 2 * x.shape[3]),
+                                              mode='bilinear')  # 2 x 2 upsampling
+
+        # 1/8
+
+        self.conv8a = conv(in_planes=2 * decoder_dims[0], out_planes=decoder_dims[1], kernel_size=3)
+        self.conv8b = conv(in_planes=decoder_dims[1], out_planes=decoder_dims[1], kernel_size=3)
+
+        # block 9
+        self.upsample9 = lambda x: F.upsample(x, size=(2 * x.shape[2], 2 * x.shape[3]),
+                                              mode='bilinear')  # 2 x 2 upsampling
+
+        # 1/4
+
+        self.conv9a = conv(in_planes=2 * decoder_dims[1], out_planes=decoder_dims[2], kernel_size=3)
+        self.conv9b = conv(in_planes=decoder_dims[2], out_planes=decoder_dims[2], kernel_size=3)
+
+        # # block 10
+
+        self.upsample10 = lambda x: F.upsample(x, size=(2 * x.shape[2], 2 * x.shape[3]),
+                                               mode='bilinear')  # 2 x 2 upsampling
+
+        # 1/2
+
+        self.conv10a = conv(in_planes=2 * decoder_dims[2], out_planes=decoder_dims[3], kernel_size=3)
+        self.conv10b = conv(in_planes=decoder_dims[3], out_planes=decoder_dims[3], kernel_size=3)
+
+        # block 11
+
+        self.upsample11 = lambda x: F.upsample(x, size=(2 * x.shape[2], 2 * x.shape[3]),
+                                               mode='bilinear')  # 2 x 2 upsampling
         # 1
-        self.fcn_type = self.cfg.get('MODEL', 'FCN_TYPE')
-        # out_channels = 3  # * (sample_duration + 1)
-        if self.fcn_type == '8s':
-            self.upscales = nn.ModuleList([
-                nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
-                nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
-                nn.Upsample(scale_factor=8, mode='bilinear', align_corners=False),
-            ])
-            self.preds = nn.ModuleList([
-                nn.Conv2d(d, out_channels, 1) for d in encoder_dims[:0:-1]
-            ])
-        elif self.fcn_type == '32s':
-            self.upscales = nn.ModuleList([
-                nn.Upsample(scale_factor=32, mode='bilinear', align_corners=False),
-            ])
-            self.preds = nn.ModuleList([
-                nn.Conv2d(encoder_dims[-1], out_channels, 1)
-            ])
-        elif self.fcn_type == '4s':
-            # UPerNet
-            # FPN Module
-            fpn_dim = self.cfg.getint('MODEL', 'FPN_DIM')
-            n_in = 2 if self.cross_skip_connect else 1
-            self.fpn_top = nn.Sequential(
-                nn.Conv2d(encoder_dims[-1]*n_in, fpn_dim, kernel_size=1, bias=False),
-                make_norm_layer(self.norm_type, fpn_dim),
-                nn.ReLU(inplace=True)
-            )
-            fpn_inplanes = encoder_dims
-            self.fpn_in = []
-            for fpn_inplane in fpn_inplanes[:-1]:  # skip the top layer
-                self.fpn_in.append(nn.Sequential(
-                    nn.Conv2d(fpn_inplane, fpn_dim, kernel_size=1, bias=False),
-                    make_norm_layer(self.norm_type, fpn_dim),
-                    nn.ReLU(inplace=True)
-                ))
-            self.fpn_in = nn.ModuleList(self.fpn_in)
 
-            self.fpn_out = []
-            for i in range(len(fpn_inplanes) - 1):  # skip the top layer
-                self.fpn_out.append(nn.Sequential(
-                    conv3x3_norm_relu(fpn_dim, fpn_dim),
-                ))
-            self.fpn_out = nn.ModuleList(self.fpn_out)
+        self.conv11a = conv(in_planes=2 * decoder_dims[3], out_planes=decoder_dims[4], kernel_size=3)
+        self.conv11b = conv(in_planes=decoder_dims[4], out_planes=decoder_dims[4], kernel_size=3)
 
-            self.conv_last = nn.Sequential(
-                conv3x3_norm_relu(len(fpn_inplanes) * fpn_dim, fpn_dim),
-                nn.Conv2d(fpn_dim, out_channels, kernel_size=1)
-            )
+        self.fuse_conv = conv(in_planes=2 * decoder_dims[4], out_planes=decoder_dims[4] // 2, kernel_size=3)
+
+        self.final_conv = nn.Conv2d(in_channels=decoder_dims[4] // 2, out_channels=out_channels,
+                                    kernel_size=3, stride=1, padding=1, dilation=1, bias=True)
+        self.upsample12 = lambda x: F.upsample(x, size=(2 * x.shape[2], 2 * x.shape[3]),
+                                              mode='bilinear')  # 2 x 2 upsampling
+
+    def decoder(self, input_tensor, encoder_outputs, stage1_encoder_output=None):
+        """
+        :param input_tensor: output of LSTM.
+        :param encoder_outputs: features from the encoder stages.
+        :param stage1_encoder_output: Connection between stage1 and stage2.
+        :return: Final result of the UNet as B, C, H, W tensor.
+        """
+
+        conv6_out = input_tensor
+        conv1b_out, conv2b_out, conv3b_out, conv4b_out, conv5b_out = encoder_outputs
+
+        if self.verbose:
+            log.info("Output Block 6: " + str(conv6_out.shape))
+
+        if self.cross_skip_connect:
+            conv7a_in  = torch.cat([conv6_out, stage1_encoder_output], dim=1)
+        else:
+            conv7a_in = conv6_out
+
+        #     conv7a_in = self.upsample7(concat_out)
+        #     # upsample everything
+        # else:  # only upsample and concatenate.
+        #     conv7a_in = self.upsample7(conv6_out)
+
+        conv7a_out = self.conv7a(conv7a_in)
+        conv7b_out = self.conv7b(conv7a_out)
+
+        if self.verbose:
+            log.info("Output Block 7: " + str(conv7b_out.shape))
+
+        conv8a_in = torch.cat([conv7b_out, conv5b_out], dim=1)
+        conv8a_in = self.upsample8(conv8a_in)
+
+        conv8a_out = self.conv8a(conv8a_in)
+        conv8b_out = self.conv8b(conv8a_out)
+
+        if self.verbose:
+            log.info("Output Block 8: " + str(conv8b_out.shape))
+
+        conv9a_in = torch.cat([conv8b_out, conv4b_out], dim=1)
+        conv9a_in = self.upsample9(conv9a_in)
+
+        conv9a_out = self.conv9a(conv9a_in)
+        conv9b_out = self.conv9b(conv9a_out)
+
+        if self.verbose:
+            log.info("Output Block 9: " + str(conv9b_out.shape))
+
+        conv10a_in = torch.cat([conv9b_out, conv3b_out], dim=1)
+        conv10a_in = self.upsample10(conv10a_in)
+
+        conv10a_out = self.conv10a(conv10a_in)
+        conv10b_out = self.conv10b(conv10a_out)
+
+        if self.verbose:
+            log.info("Output Block 10: " + str(conv10b_out.shape))
+
+        conv11a_in = torch.cat([conv10b_out, conv2b_out], dim=1)
+        conv11a_in = self.upsample11(conv11a_in)
+
+        conv11a_out = self.conv11a(conv11a_in)
+        conv11b_out = self.conv11b(conv11a_out)
+
+        fuse_in = torch.cat([conv11b_out, conv1b_out], dim=1)
+        fuse_in = self.upsample12(fuse_in)
+        fuse_out = self.fuse_conv(fuse_in)
+
+        final_out = self.final_conv(fuse_out)
+        if self.verbose:
+            log.info("Output Block 11: " + str(final_out.shape))
+
+        return final_out
 
     def apply_bottleneck(self, tensor_list):
         if self.cfg.get("MODEL","BOTTLENECK") in ["CLSTM", "CGRU"]:
@@ -430,123 +458,6 @@ class FlowInterpolationModel(nn.Module):
             output = output[:, None, ...] # B C H W -> B 1 C H W
 
         return output
-
-    def decode_input(self, input_tensor, encoder_outputs, stage1_encoding=None):
-        """
-        :param input_tensor: bottleneck layer output from the ResNet encoder.
-        :param encoder_outputs: intermediate outputs of the ResNet.
-        :return:
-        """
-        # ------------------------
-        # encoder
-        # ------------------------
-        # x1    # [1, 1/2, 1/2],        [1, 64, 4, 112, 112]
-        # x2    # [1, 1/4, 1/4],        [1, 64, 4, 56, 56]
-        # x3    # [1/2, 1/8, 1/8],      [1, 128, 2, 28, 28]
-        # x4    # [1/4, 1/16, 1/16],    [1, 256, 1, 14, 14]
-        # x5    # [1/4, 1/32, 1/32],    [1, 512, 1, 7, 7]
-        (x1, x2, x3, x4, x5) = encoder_outputs
-
-        # print('x1: ', x1.shape)
-        # print('x2: ', x2.shape)
-        # print('x3: ', x3.shape)
-        # print('x4: ', x4.shape)
-        # print('x5: ', x5.shape)
-
-        # x5 = x5.mean(2)
-
-        if self.fcn_type == '8s':
-            raise NotImplementedError
-            x3 = x3.mean(2)
-            x4 = x4.mean(2)
-            feats = [x3, x4, x5]
-            out = 0
-            for i, feat in enumerate(feats[::-1]):
-                out = self.upscales[i](self.preds[i](feat) + out)
-            out = self.squash(out)
-        elif self.fcn_type == '32s':
-            raise NotImplementedError
-            feats = [x5]
-            out = 0
-            for i, feat in enumerate(feats[::-1]):
-                out = self.upscales[i](self.preds[i](feat) + out)
-            out = self.squash(out)
-        elif self.fcn_type == '4s':
-            # x2 = x2.mean(2)
-            # x3 = x3.mean(2)
-            # x4 = x4.mean(2)
-            conv_out = [x2, x3, x4, x5]
-
-            # # Top-down
-            # p5 = self.RCNN_toplayer(c5)
-            # p4 = self._upsample_add(p5, self.RCNN_latlayer1(c4))
-            # p4 = self.RCNN_smooth1(p4)
-            # p3 = self._upsample_add(p4, self.RCNN_latlayer2(c3))
-            # p3 = self.RCNN_smooth2(p3)
-            # p2 = self._upsample_add(p3, self.RCNN_latlayer3(c2))
-            # p2 = self.RCNN_smooth3(p2)
-
-            # f = self.fpn_top(x5)
-            # f = input_tensor
-
-            if stage1_encoding is not None:
-                f = torch.cat([stage1_encoding, input_tensor], dim=1)
-            else:
-                f = input_tensor
-
-            f = self.fpn_top(f)
-            fpn_feature_list = [f]
-            for i in reversed(range(len(conv_out) - 1)):
-                conv_x = conv_out[i]
-                conv_x = self.fpn_in[i](conv_x)  # lateral branch
-
-                f = F.upsample(
-                    f, size=conv_x.size()[2:],
-                    mode='bilinear',
-                    align_corners=False
-                )  # top-down branch
-                f = conv_x + f
-
-                fpn_feature_list.append(self.fpn_out[i](f))
-
-            fpn_feature_list.reverse()  # [P2 - P5]
-            output_size = fpn_feature_list[0].size()[2:]
-            fusion_list = [fpn_feature_list[0]]
-            for i in range(1, len(fpn_feature_list)):
-                fusion_list.append(F.upsample(
-                    fpn_feature_list[i],
-                    output_size,
-                    mode='bilinear', align_corners=False)
-                )
-            fusion_out = torch.cat(fusion_list, 1)
-            out = self.conv_last(fusion_out)
-            out = F.upsample(out, mode='bilinear', scale_factor=4, align_corners=False)
-        else:
-            raise RuntimeError('Not supported FCN type: {}'.format(self.fcn_type))
-
-        # print('x1: ', x1.shape)
-        # print('x2: ', x2.shape)
-        # print('x3: ', x3.shape)
-        # print('x4: ', x4.shape)
-        # print('x5: ', x5.shape)
-
-        # # -------------------------
-        # # decoder
-        # # -------------------------
-        # x6_in = self.upsample6(x5)
-        # raw_out = self.out_conv(x6_in)
-
-        # batch_idxes = torch.LongTensor(range(raw_out.shape[0])).to(raw_out.device)
-
-        # r = raw_out[batch_idxes, 3 * target_idxes].unsqueeze(1)
-        # g = raw_out[batch_idxes, 3 * target_idxes + 1].unsqueeze(1)
-        # b = raw_out[batch_idxes, 3 * target_idxes + 2].unsqueeze(1)
-        # out = torch.cat((r, g, b), dim=1)
-
-        # convert pixel range
-        # out = (out - self.pix_mean) / self.pix_std
-
-        return out
 
     def forward(self, input_tensor, stage1_encoder_output=None):
         """
@@ -582,7 +493,7 @@ class FlowInterpolationModel(nn.Module):
             else:
                 enc_stage1 = None
 
-            d = self.decode_input(h_t, e, enc_stage1)
+            d = self.decoder(h_t, e, enc_stage1)
             # bottleneck output, and skip connections sent to decoder.
             # cross-stage encoding as well.
 
@@ -708,5 +619,3 @@ def get_model(path, in_channels, out_channels, cross_skip, stage=1, writer=None,
             log.info("Not loading weights for stage %s." % stage)
 
         return model
-
-
