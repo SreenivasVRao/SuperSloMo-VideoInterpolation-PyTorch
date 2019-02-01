@@ -12,7 +12,7 @@ import adobe_240fps
 
 import sys
 sys.path.insert(0, "/home/sreenivasv/CS701/SuperSloMo-PyTorch/code/SuperSloMo/models/")
-import SSM
+import SSMR
 
 log = logging.getLogger(__name__)
 
@@ -46,13 +46,13 @@ def get_scores(output_batch, target_batch):
 
     h1 = output_batch.shape[1]
     h2 = target_batch.shape[1]
-    assert h1==h2 and h2==736, "Image Heights are wrong."
+    # assert h1==h2 and h2==736, "Image Heights are wrong."
 
-    output_batch = output_batch[:, 8:728, ...]
-    target_batch = target_batch[:, 8:728, ...]
+    # output_batch = output_batch[:, 8:728, ...]
+    # target_batch = target_batch[:, 8:728, ...]
 
-    assert output_batch.shape[1:4]==(720, 1280, 3), "Dimensions are incorrect."
-    assert target_batch.shape[1:4]==(720, 1280, 3), "Dimensions are incorrect."
+    # assert output_batch.shape[1:4]==(720, 1280, 3), "Dimensions are incorrect."
+    # assert target_batch.shape[1:4]==(720, 1280, 3), "Dimensions are incorrect."
 
     for idx in range(B):
         output_image = output_batch[idx, ...] # * 255.0 # 1 H W C
@@ -73,6 +73,14 @@ def get_scores(output_batch, target_batch):
         ssim_scores.append(ssim_score)
         
     return psnr_scores, ie_scores, ssim_scores
+
+
+def denormalize(batch):
+    pix_mean=torch.tensor([0.485,0.456,0.406])[None, :, None, None].cuda()
+    pix_std=torch.tensor([0.229,0.224,0.225])[None, :, None, None].cuda()
+    batch = batch * pix_std + pix_mean
+    batch = batch * 255.0
+    return batch
 
 
 
@@ -103,10 +111,15 @@ def interpolate_frames(ssm_model, current_batch, interp_locations, info, iterati
         est_img_t = ssm_model(image_tensor, info, t_interp, 'VAL', iteration, compute_loss=False)
         interpolation_results.append(est_img_t)
         ground_truths.append(img_t)
-
+    
     interpolation_results = torch.stack(interpolation_results).squeeze()
+
+    interpolation_results = denormalize(interpolation_results)
+
     ground_truths = torch.stack(ground_truths).squeeze()
 
+    ground_truths = denormalize(ground_truths)
+    
     assert interpolation_results.shape == ground_truths.shape, "Shape mismatch."
 
     return interpolation_results, ground_truths
@@ -131,7 +144,7 @@ if __name__ == '__main__':
     logging.basicConfig(filename=args.log, level=logging.INFO)
     config.read(args.config)
     
-    ssm_net = SSM.full_model(config) # get the Super SloMo model.
+    ssm_net = SSMR.full_model(config) # get the Super SloMo model.
 
     ssm_net.cuda()
     ssm_net.eval()

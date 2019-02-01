@@ -19,16 +19,6 @@ class PerceptualLoss(nn.Module):
 
         self.l2_loss = nn.MSELoss(reduce=False)
 
-        vgg16_mean = np.asarray([0.485, 0.456, 0.406])[None, :, None, None]
-        vgg16_std = np.asarray([0.229, 0.224, 0.225])[None, :, None, None]
-
-        vgg16_std = torch.autograd.Variable(torch.from_numpy(vgg16_std), requires_grad=False).float().cuda()
-
-        vgg16_mean = torch.autograd.Variable(torch.from_numpy(vgg16_mean), requires_grad=False).float().cuda()
-
-        self.register_buffer("vgg16_mean", vgg16_mean)
-        self.register_buffer("vgg16_std", vgg16_std)
-
         self.vgg16.eval()
         self.eval()
 
@@ -38,32 +28,8 @@ class PerceptualLoss(nn.Module):
             param.requires_grad = False
         self.vgg_conv4_3 = self.vgg16.features[:23]
 
-    def rescale(self, tensor):
-        """
-        :param tensor: B C H W tensor
-        :return: tensor after rescaling to [0, 1] and normalizing by vgg mean and std
-        """
-        b, c, h, w = tensor.shape
-        tensor = tensor.contiguous()
-        max_val, _ = tensor.view(b, c, -1).max(dim=2)
-        min_val, _ = tensor.view(b, c, -1).min(dim=2)
-
-        max_val = max_val[..., None, None]
-        min_val = min_val[..., None, None]
-
-        tensor_rescaled = (tensor - min_val)/(max_val-min_val)
-        tensor_normed = (tensor_rescaled - self.vgg16_mean) / self.vgg16_std
-
-        return tensor_normed
-
     def forward(self, x_input, x_target):
-        
-        x_input = x_input[:, [2, 1, 0], ...]
-        x_target = x_target[:, [2, 1, 0], ...]
-        # BGR -> RGB
-        x_input = self.rescale(x_input)
-        x_target = self.rescale(x_target)
-        
+
         x_input = self.vgg_conv4_3(x_input)
         x_target = self.vgg_conv4_3(x_target)
         perceptual_loss = self.l2_loss(x_input, x_target)
@@ -227,9 +193,9 @@ class SSMLosses(nn.Module):
         
         # gets a [B, 1] with mean loss over each sample tensor
         # need this because I'm using multi-gpu, and need to accumulate the loss over samples. Such bad code :/
-        
+
         total_loss =  loss_reconstr +  loss_warp +  loss_perceptual
-        
+
         loss_list = [total_loss, loss_reconstr, loss_warp, loss_perceptual]
 
         loss_tensor = torch.stack(loss_list).squeeze()

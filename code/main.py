@@ -1,4 +1,4 @@
-from SuperSloMo.models import SSM
+from SuperSloMo.models import SSMR
 from SuperSloMo.utils import adobe_240fps
 import numpy as np,  random
 import torch.optim
@@ -63,7 +63,7 @@ class SSMNet:
         self.writer = SummaryWriter(os.path.join(log_dir, self.expt_name, "plots"))
         self.get_hyperparams()
 
-        self.superslomo = SSM.full_model(self.cfg, self.writer)
+        self.superslomo = SSMR.full_model(self.cfg, self.writer)
         
         if torch.cuda.device_count()>1:
             log.info("Found %s GPUS. Using DataParallel."%torch.cuda.device_count())
@@ -118,23 +118,26 @@ class SSMNet:
         assert 1<=t_idx<=7, "Invalid time-step: "+str(t_idx)
         t_interp = float(t_idx)/8
         data_batch = data_batch.cuda().float()
-
-        mid_idx = data_batch.shape[1]//2
-        indices = list(range(data_batch.shape[1]))
-        indices.pop(mid_idx)
-        image_tensor = data_batch[:, indices, ...] # indices = I0, I1, I2, I3
-        img_t = data_batch[:, mid_idx, ...] # most intermediate frame.
-
-        if iteration==1:
-            log.info("Middle index :%s"%mid_idx)
-            log.info("Indices used:")
-            log.info(indices)
-            
+        image_tensor = data_batch[:, 0::2, ...] # indices = I0, I1, I2, I3
+        img_t = data_batch[:, 1::2, ...] # most intermediate frame.
+        assert image_tensor.shape[1]==(img_t.shape[1]+1), "Incorrect input and output."
         
-        losses = self.superslomo(image_tensor, dataset_info, t_interp, split=split, iteration=iteration,
+        est_img_t, losses = self.superslomo(image_tensor, dataset_info, t_interp, split=split, iteration=iteration,
                                  target_images=img_t, compute_loss=True)
         losses = losses.mean(dim=0) # averages the loss over the batch. Horrific code. [B, 4] -> [4]
         self.write_losses(losses, iteration, split)
+
+        if iteration%100==0:
+            pred_img = est_img_t[0, ...]
+            pix_mean = self.cfg.get('MODEL', 'PIXEL_MEAN').split(',')
+            pix_mean = [float(p) for p in pix_mean]
+            pix_std = self.cfg.get('MODEL', 'PIXEL_STD').split(',')
+            pix_std = [float(p) for p in pix_std]
+            pix_std = torch.tensor(pix_std)[None, :, None, None].cuda()
+            pix_mean = torch.tensor(pix_mean)[None, :, None, None].cuda()
+            pred_img = pred_img[None, ...] *pix_std + pix_mean
+            self.writer.add_image(split, pred_img[0, [2, 1, 0], ...], iteration)
+            
         total_loss = losses[0]
         return total_loss
 
@@ -154,7 +157,7 @@ class SSMNet:
         log.info("Starting from Epoch: %s"%start)
         iteration = 0
 
-        train_info = adobe_240fps.get_data_info(self.cfg, split="TRAIN")
+        train_info = None
         # val_info = adobe_240fps.get_data_info(self.cfg, split="VAL")
 
         for epoch in range(start, self.n_epochs+1):
@@ -165,6 +168,8 @@ class SSMNet:
 
             for train_batch in adobe_train_samples:
                 iteration +=1
+                if iteration%100==0:
+                    log.info("Iterations: %s"%iteration)
                 data_batch, t_idx = train_batch
                 if data_batch.shape[0]<torch.cuda.device_count():
                     continue

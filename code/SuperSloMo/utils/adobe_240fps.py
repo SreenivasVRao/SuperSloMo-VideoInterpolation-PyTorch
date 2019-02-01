@@ -1,3 +1,5 @@
+import sys
+sys.path.insert(0, "/home/sreenivasv/CS701/SuperSloMo-PyTorch/code/SuperSloMo/utils/")
 import numpy as np
 import logging
 import cv2
@@ -5,6 +7,8 @@ from math import ceil
 import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
+from common import (AugmentData, ResizeCrop, EvalPad, Normalize, ToTensor)
+
 
 cv2.setNumThreads(0)
 log = logging.getLogger(__name__)
@@ -19,7 +23,7 @@ class Reader(Dataset):
         """
 
         self.cfg = cfg
-        self.compute_scale_factors()
+        # self.compute_scale_factors()
         self.clips = self.read_clip_list(split)
         self.split = split
         self.reqd_images = 8 * (self.cfg.getint("TRAIN","N_FRAMES") -1 )+ 1
@@ -97,83 +101,6 @@ class Reader(Dataset):
 
         return img_paths
 
-    
-class AugmentData(object):
-    """
-    Flips the images horizontally 50% of the time.
-    Performs a random rotation of the data.
-    """
-
-    def __call__(self, frames):
-        """
-        :param frames: N H W C array.
-        :return: same array after augmentation.
-        """
-        if np.random.randint(0, 2)==1:
-            frames = frames[:,:,::-1,:] # horizontal flip 50% of the time
-
-        N, H, W, C = frames.shape
-
-        cx = np.random.randint(0, W)
-        cy = np.random.randint(0, H)
-        theta = np.random.uniform(-5, 5)
-        M = cv2.getRotationMatrix2D((cx, cy),theta,1)
-        # rotate around random center.
- 
-        for idx in range(N):
-            img = frames[idx,...]
-            frames[idx,...] = cv2.warpAffine(img, M, (W, H))
-
-        return frames
-
-    
-class ResizeCrop(object):
-    """
-    Convert 720 x 1280 frames to 352 x 352 -> Resize + Random Cropping
-    """
-
-    def __call__(self, sample_frames):
-
-        _, h, w, c = sample_frames.shape
-        assert h==720 and w==1280, "invalid dimensions"
-
-        new_frames = np.zeros((sample_frames.shape[0], 360, 640, 3))
-
-        for idx in range(sample_frames.shape[0]):
-            new_frames[idx, ...] = cv2.resize(sample_frames[idx, ...], (640, 360))
-        h_start = np.random.randint(0, 360-352+1)
-        w_start = np.random.randint(0, 640-352+1)
-        new_frames = new_frames[:, h_start:h_start+352, w_start:w_start+352, ...]
-
-        return new_frames
-
-
-class EvalPad(object):
-    """
-    Zero padding for evaluation alone. 720 x 1280 -> 736x1280
-    """
-    def __call__(self, sample_tensor):
-
-        _, c, h, w = sample_tensor.shape
-        
-        assert h==720 and w==1280, "invalid dimensions"
-
-        pad = torch.nn.ZeroPad2d([0,0, 8, 8])
-
-        sample_tensor = pad(sample_tensor)
-
-        return sample_tensor
-    
-    
-class ToTensor(object):
-    """
-    Converts np 0-255 uint8 to 0-1 tensor
-    """
-    def __call__(self, sample):
-        sample = torch.from_numpy(sample.copy()) # /255.0
-        sample = sample.permute(0, 3, 1, 2) # n_frames, H W C -> n_frames, C, H, W
-        return sample
-
 
 def collate_data(aBatch, custom_transform, t_sample, n_frames):
     """
@@ -194,11 +121,22 @@ def collate_data(aBatch, custom_transform, t_sample, n_frames):
         t_index = sorted(t_index)
         
     elif t_sample=="FIXED":
-        # t_index = [0, 8, 12, 16, 24]
-        t_index = [i*8 for i in range(n_frames)]
-        interp_idx = int(np.mean(t_index))
-        t_index.append(interp_idx) # most intermediate frame to be interpolated.
-        t_index = sorted(t_index)
+        # get I_0, I_0.5, I_1, I_1.5, I_2, ... I_n.
+        if n_frames == 2:
+            input_idx = [0, 8]
+            interp_idx = [4]
+        elif n_frames == 4:
+            input_idx = [0, 8, 16, 24]
+            interp_idx = [4, 12, 20]
+        elif n_frames == 6:
+            input_idx = [0, 8, 16, 24, 32, 40]
+            interp_idx =  [4, 12, 20, 28, 36]
+        elif n_frames == 8:
+            input_idx = [0, 8, 16, 24, 32, 40, 48, 56]
+            interp_idx =  [4, 12, 20, 28, 36, 44, 52]
+
+        t_index = sorted(input_idx + interp_idx)
+        assert len(t_index)==(2*n_frames - 1), "Incorrect number of frames."
 
     elif t_sample=="RANDOM":
         raise NotImplementedError
@@ -239,17 +177,49 @@ def read_sample(img_paths, t_index=None):
     return frames
 
 
+def get_transform(config, split, eval):
+
+    pix_mean = config.get('MODEL', 'PIXEL_MEAN').split(',')
+    pix_mean = [float(p) for p in pix_mean]
+    pix_std = config.get('MODEL', 'PIXEL_STD').split(',')
+    pix_std = [float(p) for p in pix_std]
+
+    if eval:
+        custom_transform = transforms.Compose([Normalize(pix_mean, pix_std),
+                                               ToTensor()])
+                                               # EvalPad()])
+
+    elif split == "VAL":
+        crop_imh = config.getint('VAL', 'CROP_IMH')
+        crop_imw = config.getint('VAL', 'CROP_IMW')
+        custom_transform = transforms.Compose([
+            ResizeCrop(crop_imh, crop_imw),
+            Normalize(pix_mean, pix_std),
+            ToTensor()
+        ])
+
+    elif split == "TRAIN":
+        crop_imh = config.getint('TRAIN', 'CROP_IMH')
+        crop_imw = config.getint('TRAIN', 'CROP_IMW')
+        custom_transform = transforms.Compose([
+            ResizeCrop(crop_imh, crop_imw),
+            AugmentData(),
+            Normalize(pix_mean, pix_std),
+            ToTensor()
+        ])
+    else:
+        raise Exception("Invalid Split: %s"%split)
+
+    return custom_transform
+
+
 def data_generator(config, split, eval=False):
 
     if eval:
-        custom_transform = transforms.Compose([ToTensor(), EvalPad()])
-        t_sample = "NIL"
-    elif split=="VAL":
-        custom_transform = transforms.Compose([ResizeCrop(), ToTensor()])
-        t_sample = config.get("MISC", "T_SAMPLE")
-    elif split=="TRAIN":
-        custom_transform = transforms.Compose([ResizeCrop(), AugmentData(), ToTensor()])
-        t_sample = config.get("MISC", "T_SAMPLE")
+        assert config.get("MISC", "T_SAMPLE") == "NIL", "Invalid sampling argument for eval mode."
+
+    custom_transform = get_transform(config, split, eval)
+    t_sample = config.get("MISC", "T_SAMPLE")
 
     batch_size = config.getint(split, "BATCH_SIZE")
     n_workers = config.getint("MISC", "N_WORKERS")
@@ -257,20 +227,21 @@ def data_generator(config, split, eval=False):
     dataset = Reader(config, split, eval)
 
     n_frames = config.getint("TRAIN", "N_FRAMES")
-    log.info("CLSTM trained with %s frame windows."%n_frames)
+    log.info("Model trained with %s frame input."%n_frames)
 
     adobe_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=n_workers,
-                              worker_init_fn = lambda _: np.random.seed(int(torch.initial_seed()%(2**32 -1))),
-                              collate_fn = lambda batch: collate_data(batch, custom_transform, t_sample, n_frames))
+                              worker_init_fn=lambda _: np.random.seed(int(torch.initial_seed()%(2**32 -1))),
+                              collate_fn=lambda batch: collate_data(batch, custom_transform, t_sample, n_frames))
 
     for batch_sample in adobe_loader:        
         yield batch_sample
 
 
 def get_data_info(config, split):
-    dataset = Reader(config, split)
-    return dataset.dims, dataset.scale_factors
-
+    # dataset = Reader(config, split)
+    # return dataset.dims, dataset.scale_factors
+    log.warning("This function should not be called.")
+    return None, None
 
 
 if __name__ == '__main__':
@@ -284,31 +255,13 @@ if __name__ == '__main__':
     parser.add_argument("--config") # config
     args = parser.parse_args()
 
-
     logging.basicConfig(filename=args.log, level=logging.INFO)
 
     config = configparser.RawConfigParser()
     config.read(args.config)
     logging.info("Read config")
-    samples = data_generator(config, "TRAIN", eval=True)
+    samples = data_generator(config, "TRAIN")
 
     aBatch, t_idx = next(samples)
     log.info(aBatch.shape)
     log.info(t_idx)
-
-    # n_frames = aBatch.shape[0]*aBatch.shape[1]
-    
-    # import time
-    # start = time.time()
-    # k = 0
-    # for epoch in range(10):
-    #     log.info("Epoch: %s K: %s"%(epoch, k))
-    #     for aBatch, t_idx in samples:
-    #         k+=1
-        
-    # stop = time.time()
-    # total = (stop-start)
-    # average = total/k
-    # log.info("Total: %.2f seconds"%total)
-    # log.info("Average: %.2f seconds"%average)
-    
