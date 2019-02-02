@@ -186,8 +186,7 @@ def get_transform(config, split, eval):
 
     if eval:
         custom_transform = transforms.Compose([Normalize(pix_mean, pix_std),
-                                               ToTensor()])
-                                               # EvalPad()])
+                                               ToTensor(), EvalPad()])
 
     elif split == "VAL":
         crop_imh = config.getint('VAL', 'CROP_IMH')

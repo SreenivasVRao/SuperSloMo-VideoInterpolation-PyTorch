@@ -46,13 +46,13 @@ def get_scores(output_batch, target_batch):
 
     h1 = output_batch.shape[1]
     h2 = target_batch.shape[1]
-    # assert h1==h2 and h2==736, "Image Heights are wrong."
+    assert h1==h2 and h2==736, "Image Heights are wrong."
 
-    # output_batch = output_batch[:, 8:728, ...]
-    # target_batch = target_batch[:, 8:728, ...]
+    output_batch = output_batch[:, 8:728, ...]
+    target_batch = target_batch[:, 8:728, ...]
 
-    # assert output_batch.shape[1:4]==(720, 1280, 3), "Dimensions are incorrect."
-    # assert target_batch.shape[1:4]==(720, 1280, 3), "Dimensions are incorrect."
+    assert output_batch.shape[1:4]==(720, 1280, 3), "Dimensions are incorrect."
+    assert target_batch.shape[1:4]==(720, 1280, 3), "Dimensions are incorrect."
 
     for idx in range(B):
         output_image = output_batch[idx, ...] # * 255.0 # 1 H W C
