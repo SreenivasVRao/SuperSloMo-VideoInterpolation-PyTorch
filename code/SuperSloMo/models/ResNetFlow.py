@@ -136,7 +136,7 @@ class FlowComputationModel(nn.Module):
     def apply_bottleneck(self, tensor_list):
         if self.cfg.get("MODEL", "BOTTLENECK") in ["CLSTM", "CGRU"]:
             x_fwd = torch.stack(tensor_list, dim=1)
-            x_rev = torch.stack(tensor_list, dim=1)
+            x_rev = torch.stack(tensor_list[::-1], dim=1)
             output = self.bottleneck_layer(x_fwd, x_rev)
         elif self.cfg.get("MODEL", "BOTTLENECK") == "CONV":
             assert len(tensor_list) == 1, "Wrong number of timesteps."
@@ -449,7 +449,7 @@ class FlowInterpolationModel(nn.Module):
     def apply_bottleneck(self, tensor_list):
         if self.cfg.get("MODEL","BOTTLENECK") in ["CLSTM", "CGRU"]:
             x_fwd = torch.stack(tensor_list, dim=1)
-            x_rev = torch.stack(tensor_list, dim=1)
+            x_rev = torch.stack(tensor_list[::-1], dim=1)
             output = self.bottleneck_layer(x_fwd, x_rev)
         elif self.cfg.get("MODEL", "BOTTLENECK") == "CONV":
             assert len(tensor_list)==1, "Wrong number of timesteps."
