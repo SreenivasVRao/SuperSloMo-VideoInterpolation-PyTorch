@@ -136,7 +136,7 @@ class SSMNet:
             pix_std = torch.tensor(pix_std)[None, :, None, None].cuda()
             pix_mean = torch.tensor(pix_mean)[None, :, None, None].cuda()
             pred_img = pred_img[None, ...] *pix_std + pix_mean
-            self.writer.add_image(split, pred_img[0, [2, 1, 0], ...], iteration)
+            self.writer.add_image(split, pred_img[0, ...], iteration)
             
         total_loss = losses[0]
         return total_loss

@@ -169,7 +169,7 @@ def read_sample(img_paths, t_index=None):
 
     for idx, fpath in enumerate(img_paths):
         img = cv2.imread(fpath)
-        frames[idx,...] = img
+        frames[idx,...] = img[..., ::-1] # BGR -> RGB
 
     if h==1280 and w==720: # vertical video. W = 720, H =1280
         frames = frames.swapaxes(1, 2)

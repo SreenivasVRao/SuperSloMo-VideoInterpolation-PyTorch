@@ -23,7 +23,7 @@ def conv(in_planes, out_planes, kernel_size=3, stride=1, padding=1, dilation=1):
                   padding=padding, dilation=dilation, bias=True),
         nn.LeakyReLU(0.1))
 
-def conv_norm(in_planes, out_planes, norm_type, kernel_size=3, stride=1, padding=1, dilation=1):
+def conv_norm(in_planes, out_planes, norm_type='bn', kernel_size=3, stride=1, padding=1, dilation=1):
     return nn.Sequential(
         nn.Conv2d(in_planes, out_planes, kernel_size=kernel_size, stride=stride,
                   padding=padding, dilation=dilation, bias=True),
