@@ -186,8 +186,7 @@ def get_transform(config, split, eval):
 
     if eval:
         custom_transform = transforms.Compose([Normalize(pix_mean, pix_std),
-                                               ToTensor(), EvalPad()])
-
+                                               ToTensor(), EvalPad(torch.nn.ZeroPad2d([0,0,8,8]))])
     elif split == "VAL":
         crop_imh = config.getint('VAL', 'CROP_IMH')
         crop_imw = config.getint('VAL', 'CROP_IMW')
@@ -259,8 +258,16 @@ if __name__ == '__main__':
     config = configparser.RawConfigParser()
     config.read(args.config)
     logging.info("Read config")
-    samples = data_generator(config, "TRAIN")
+    import time
+    total = 0
+    
+    for epoch in range(10):
+        samples = data_generator(config, "TRAIN")
+        tic = time.time()
+        for x in samples:
+            pass
+        toc = time.time()
+        tic = time.time()
+        total += toc - tic
 
-    aBatch, t_idx = next(samples)
-    log.info(aBatch.shape)
-    log.info(t_idx)
+    log.info("Average %s"%(total/10))

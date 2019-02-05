@@ -174,7 +174,7 @@ if __name__ == '__main__':
         if iteration%5==0:
             log.info(aBatch.shape)
             log.info(t_idx)
-            log.info("Avg. PSNR: %.3f IE: %.3f SSIM: %.3f"%(np.mean(PSNR_score), np.mean(IE_score), np.mean(SSIM_score)))
+            log.info("So far: PSNR: %.3f IE: %.3f SSIM: %.3f"%(np.mean(video_PSNR), np.mean(video_IE), np.mean(video_SSIM)))
 
     mean_avg_psnr = np.mean(video_PSNR)
     mean_avg_IE = np.mean(video_IE)
