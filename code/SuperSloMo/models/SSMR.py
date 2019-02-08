@@ -7,7 +7,7 @@ from SSMLoss import get_loss as get_ssm_loss
 import torch
 import torch.nn as nn
 import logging
-import ResNetFlow as resnet
+import ResNetFlow2 as resnet
 import UNetFlow as unet
 
 log = logging.getLogger(__name__)
