@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 import logging
 import ResNetFlow as resnet
-
+import UNetFlow as unet
 
 log = logging.getLogger(__name__)
 
@@ -22,36 +22,32 @@ class FullModel(nn.Module):
         self.load_model()
         self.loss = get_ssm_loss(cfg)
 
+    def build_stage(self, stage, in_channels, out_channels):
+        stage_id= "STAGE%s"%stage
+        weights = None
+        if self.cfg.getboolean(stage_id, "LOADPREV"):
+            weights = self.cfg.get(stage_id, "WEIGHTS")
+
+        self.cross_skip = self.cfg.getboolean("STAGE2", "CROSS_SKIP")
+
+        if self.cfg.get(stage_id, "ENCODER") == "unet":
+            model = unet.get_model(weights, in_channels, out_channels, self.cross_skip,
+                                   verbose = False, stage = stage, cfg = self.cfg)
+
+        elif self.cfg.get(stage_id, "ENCODER") in ["resnet18", "resnet34"]:
+            model = resnet.get_model(weights, in_channels, out_channels, self.cross_skip,
+                                     verbose = False, stage = stage, cfg = self.cfg)
+        else:
+            raise Exception("Unsupported encoder: %s"%self.cfg.get(stage_id, "ENCODER"))
+        return model
+
     def load_model(self):
         """
         Loads the models, optionally with weights, and optionally freezing individual stages.
         :return:
         """
-
-        stage1_weights = None
-        stage2_weights = None
-        if self.cfg.getboolean("STAGE1", "LOADPREV"):
-            stage1_weights = self.cfg.get("STAGE1", "WEIGHTS")
-
-        if self.cfg.getboolean("STAGE2", "LOADPREV"):
-            stage2_weights = self.cfg.get("STAGE2", "WEIGHTS")
-
-        self.cross_skip = self.cfg.getboolean("STAGE2", "CROSS_SKIP")
-
-        if self.cfg.get("STAGE1", "MODEL") == "PWC":
-            log.info("STAGE1 PWC")
-            raise NotImplementedError
-            # self.stage1_model = PWCNet.pwc_dc_net(stage1_weights)  # Flow Computation Model
-
-        elif self.cfg.get("STAGE1", "MODEL") in ["UNET", "UNETC", "UNETA"]:
-
-            self.stage1_model = resnet.get_model(stage1_weights, in_channels=6, out_channels=4,
-                                               cross_skip=self.cross_skip, stage=1, cfg=self.cfg)
-
-        # Flow Computation Model
-        self.stage2_model = resnet.get_model(stage2_weights, in_channels=16, out_channels=5,
-                                           cross_skip=self.cross_skip, stage=2, cfg=self.cfg)
-        # Flow Interpolation Model
+        self.stage1_model = self.build_stage(stage=1, in_channels=6, out_channels=4)
+        self.stage2_model = self.build_stage(stage=2, in_channels=16, out_channels=5)
 
         if self.cross_skip:
             log.info("Cross stage Skip Connections: ENABLED")
@@ -164,7 +160,7 @@ class FullModel(nn.Module):
         est_img_t = None
 
         for t in range(T):
-            _, flowI_out = flowI_outputs[t]
+            flowI_out = flowI_outputs[t]
             flowI_in = stage2_inputs[:, t, ...]
             img_pair = image_pairs[:, t, ...]
 

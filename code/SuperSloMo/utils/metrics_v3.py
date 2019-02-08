@@ -156,7 +156,7 @@ if __name__ == '__main__':
     video_SSIM = []
 
     iteration = 0
-    val_samples = adobe_240fps.data_generator(config, "VAL", eval=True)
+    val_samples = adobe_240fps.data_generator(config, "VAL", eval_mode=True)
     n_frames = config.getint("TRAIN", "N_FRAMES")
 
     interp_locations = get_interp_idx(n_frames)

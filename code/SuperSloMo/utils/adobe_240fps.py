@@ -16,7 +16,7 @@ log = logging.getLogger(__name__)
 
 class Reader(Dataset):
 
-    def __init__(self, cfg, split="TRAIN", eval_mode=False):
+    def __init__(self, cfg, split="TRAIN", eval_mode=False, transform=None):
         """
         :param cfg: Config file.
         :param split: TRAIN/VAL/TEST
@@ -29,6 +29,8 @@ class Reader(Dataset):
         self.reqd_images = 8 * (self.cfg.getint("TRAIN","N_FRAMES") -1 )+ 1
         # log.info(split+ ": Extracted clip list.")
         self.eval_mode = eval_mode
+        self.reqd_idx = self.get_reqd_idx()
+        self.custom_transform = transform
 
     def read_clip_list(self, split):
         """
@@ -55,6 +57,43 @@ class Reader(Dataset):
                 continue
         return clips
 
+    def get_reqd_idx(self):
+        t_sample = self.cfg.get("MISC", "T_SAMPLE")
+        n_frames = self.cfg.getint("TRAIN", "N_FRAMES")
+        if t_sample == "NIL":
+            t_index = [i * 8 for i in range(n_frames)]
+            mid_idx = int(np.mean(t_index))
+            t1 = mid_idx - 3
+            t2 = t1 + 7
+            t_index.extend(range(t1, t2))  # intermediate frames to be interpolated.
+            t_index = sorted(t_index)
+
+        elif t_sample == "FIXED":
+            # get I_0, I_0.5, I_1, I_1.5, I_2, ... I_n.
+            if n_frames == 2:
+                input_idx = [0, 8]
+                interp_idx = [4]
+            elif n_frames == 4:
+                input_idx = [0, 8, 16, 24]
+                interp_idx = [4, 12, 20]
+            elif n_frames == 6:
+                input_idx = [0, 8, 16, 24, 32, 40]
+                interp_idx = [4, 12, 20, 28, 36]
+            elif n_frames == 8:
+                input_idx = [0, 8, 16, 24, 32, 40, 48, 56]
+                interp_idx = [4, 12, 20, 28, 36, 44, 52]
+
+            t_index = sorted(input_idx + interp_idx)
+            assert len(t_index) == (2 * n_frames - 1), "Incorrect number of frames."
+
+        elif t_sample == "RANDOM":
+            raise NotImplementedError
+            t_index = np.random.randint(1, 8)  # uniform sampling
+            t_index = [0, 8, 8 + t_index, 16, 24]
+        else:
+            raise Exception("Invalid sampling argument.")
+
+        return t_index
 
     def compute_scale_factors(self):
         """
@@ -99,58 +138,22 @@ class Reader(Dataset):
         if self.split=="TRAIN" and np.random.randint(0, 2)==1:
             img_paths = img_paths[::-1]
 
-        return img_paths
+        sample = read_sample(img_paths, self.reqd_idx)
+        sample = self.custom_transform(sample)
+
+        return sample
 
 
-def collate_data(aBatch, custom_transform, t_sample, n_frames):
+def collate_data(aBatch, t_sample):
     """
     :param aBatch: List[List] B samples of 8 frames (frames given as paths)
-    :param custom_transform: torchvision transform
     :param t_sample: NIL => No sampling. Read all frames.
                      FIXED => Fixed sampling of middle frame. t_index= 4
                      RANDOM => Uniform random sampling from 1, 7.
     :return: tensor N, K, C, H, W and index of time step sampled (None, or int)
     """
 
-    if t_sample=="NIL":
-        t_index = [i*8 for i in range(n_frames)]
-        mid_idx = int(np.mean(t_index))
-        t1 = mid_idx - 3
-        t2 = t1 + 7
-        t_index.extend(range(t1, t2)) # intermediate frames to be interpolated.
-        t_index = sorted(t_index)
-        
-    elif t_sample=="FIXED":
-        # get I_0, I_0.5, I_1, I_1.5, I_2, ... I_n.
-        if n_frames == 2:
-            input_idx = [0, 8]
-            interp_idx = [4]
-        elif n_frames == 4:
-            input_idx = [0, 8, 16, 24]
-            interp_idx = [4, 12, 20]
-        elif n_frames == 6:
-            input_idx = [0, 8, 16, 24, 32, 40]
-            interp_idx =  [4, 12, 20, 28, 36]
-        elif n_frames == 8:
-            input_idx = [0, 8, 16, 24, 32, 40, 48, 56]
-            interp_idx =  [4, 12, 20, 28, 36, 44, 52]
-
-        t_index = sorted(input_idx + interp_idx)
-        assert len(t_index)==(2*n_frames - 1), "Incorrect number of frames."
-
-    elif t_sample=="RANDOM":
-        raise NotImplementedError
-        t_index = np.random.randint(1, 8) #uniform sampling
-        t_index = [0, 8, 8+t_index, 16, 24]
-    else:
-        raise Exception("Invalid sampling argument.")
-
-    frame_buffer = [read_sample(sample, t_index) for sample in aBatch]
-    
-    for idx, a_buffer in enumerate(frame_buffer):
-        frame_buffer[idx] = custom_transform(a_buffer)
-
-    frame_buffer = torch.stack(frame_buffer)
+    frame_buffer = torch.stack(aBatch)
 
     if t_sample=="FIXED":
         return frame_buffer, 4 # middle index. lol such bad code.
@@ -177,14 +180,14 @@ def read_sample(img_paths, t_index=None):
     return frames
 
 
-def get_transform(config, split, eval):
+def get_transform(config, split, eval_mode):
 
     pix_mean = config.get('MODEL', 'PIXEL_MEAN').split(',')
     pix_mean = [float(p) for p in pix_mean]
     pix_std = config.get('MODEL', 'PIXEL_STD').split(',')
     pix_std = [float(p) for p in pix_std]
 
-    if eval:
+    if eval_mode:
         custom_transform = transforms.Compose([Normalize(pix_mean, pix_std),
                                                ToTensor(), EvalPad(torch.nn.ZeroPad2d([0,0,8,8]))])
     elif split == "VAL":
@@ -211,28 +214,28 @@ def get_transform(config, split, eval):
     return custom_transform
 
 
-def data_generator(config, split, eval=False):
+def data_generator(config, split, eval_mode=False):
 
-    if eval:
+    if eval_mode:
         assert config.get("MISC", "T_SAMPLE") == "NIL", "Invalid sampling argument for eval mode."
 
-    custom_transform = get_transform(config, split, eval)
+    custom_transform = get_transform(config, split, eval_mode)
     t_sample = config.get("MISC", "T_SAMPLE")
 
     batch_size = config.getint(split, "BATCH_SIZE")
     n_workers = config.getint("MISC", "N_WORKERS")
 
-    dataset = Reader(config, split, eval)
+    dataset = Reader(config, split, eval_mode, custom_transform)
 
     n_frames = config.getint("TRAIN", "N_FRAMES")
     log.info("Model trained with %s frame input."%n_frames)
 
     adobe_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=n_workers,
                               worker_init_fn=lambda _: np.random.seed(int(torch.initial_seed()%(2**32 -1))),
-                              collate_fn=lambda batch: collate_data(batch, custom_transform, t_sample, n_frames))
+                              collate_fn=lambda batch: collate_data(batch, t_sample),
+                              pin_memory=True)
 
-    for batch_sample in adobe_loader:        
-        yield batch_sample
+    return adobe_loader
 
 
 def get_data_info(config, split):

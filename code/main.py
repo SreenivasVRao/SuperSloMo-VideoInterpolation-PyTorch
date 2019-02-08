@@ -158,11 +158,11 @@ class SSMNet:
         iteration = 0
 
         train_info = None
+        adobe_train_samples = adobe_240fps.data_generator(self.cfg, split="TRAIN")
         # val_info = adobe_240fps.get_data_info(self.cfg, split="VAL")
 
         for epoch in range(start, self.n_epochs+1):
             # shuffles the data on each epoch
-            adobe_train_samples = adobe_240fps.data_generator(self.cfg, split="TRAIN")
             # adobe_val_samples = adobe_240fps.data_generator(self.cfg, split="VAL")
             lr_scheduler.step()
 

@@ -6,6 +6,7 @@ sys.path.insert(0, "/home/sreenivasv/CS701/SuperSloMo-PyTorch/code/SuperSloMo/mo
 from CLSTM.convlstm import *
 from CLSTM.convgru import *
 
+
 def make_norm_layer(norm_type, out_planes, is_2d=True, gn_planes=32):
     if norm_type.lower() == 'bn':
         if is_2d:
@@ -17,18 +18,20 @@ def make_norm_layer(norm_type, out_planes, is_2d=True, gn_planes=32):
     else:
         raise Exception('Not supported normalization layer type: {}.'.format(norm_type))
 
+
 def conv(in_planes, out_planes, kernel_size=3, stride=1, padding=1, dilation=1):
     return nn.Sequential(
         nn.Conv2d(in_planes, out_planes, kernel_size=kernel_size, stride=stride,
                   padding=padding, dilation=dilation, bias=True),
-        nn.LeakyReLU(0.1))
+        nn.LeakyReLU(0.1, inplace=True))
+
 
 def conv_norm(in_planes, out_planes, norm_type='bn', kernel_size=3, stride=1, padding=1, dilation=1):
     return nn.Sequential(
         nn.Conv2d(in_planes, out_planes, kernel_size=kernel_size, stride=stride,
                   padding=padding, dilation=dilation, bias=True),
         make_norm_layer(norm_type, out_planes),
-        nn.ReLU()
+        nn.ReLU(inplace=True)
     )
 
 
@@ -80,8 +83,6 @@ def warp(x, flo):
         vgrid = vgrid.permute(0,2,3,1)
         output = nn.functional.grid_sample(x, vgrid)
         # mask = Variable(torch.ones(x.size())).cuda()
-
-
         # mask = nn.functional.grid_sample(mask, vgrid)
 
         # # if W==128:

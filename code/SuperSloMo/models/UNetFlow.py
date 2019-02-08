@@ -15,9 +15,11 @@ class FlowComputationModel(nn.Module):
         super(FlowComputationModel, self).__init__()
         self.verbose = verbose
         self.cfg = cfg
-        assert self.cfg.getboolean("STAGE1", "CLSTM"), "CLSTM expected in stage 1."
-        log.info("CLSTM in stage1.")
+        self.bottleneck_type = self.cfg.get("MODEL", "BOTTLENECK")
         self.cross_skip_connect = cross_skip
+        log.info("Stage 1 model.")
+        log.info("Encoder: UNET.  Bottleneck: %s."%self.bottleneck_type)
+
         # skip connection from stage1 to stage2
         self.build_model(in_channels, out_channels)
 
@@ -59,8 +61,17 @@ class FlowComputationModel(nn.Module):
 
         # block 6
         self.pool6 = avg_pool(kernel_size=2, stride=None, padding=0)  # 1/32
-        self.conv6 = ConvBLSTM(in_channels=512, hidden_channels=512, kernel_size=(3, 3),
-                               num_layers=2, batch_first=True)
+
+        if self.bottleneck_type == "CONV":
+            self.conv6 = nn.Sequential(conv(512, 512, kernel_size=3),
+                                       conv(512, 512, kernel_size=3))
+
+        elif self.bottleneck_type == "CLSTM":
+            self.conv6 = ConvBLSTM(in_channels=512, hidden_channels=512,
+                                    kernel_size=(3, 3), num_layers=2, batch_first=True)
+        elif self.bottleneck_type == "CGRU":
+            self.conv6 = ConvBGRU(in_channels=512, hidden_channels=512,
+                                   kernel_size=(3, 3), num_layers=2, batch_first=True)
 
         # block 7
 
@@ -162,10 +173,15 @@ class FlowComputationModel(nn.Module):
         return conv1b_out, conv2b_out, conv3b_out, conv4b_out, conv5b_out, pool6_out
 
     def bottleneck(self, tensor_list):
-        # tensor_rev = tensor_list[::-1][:]
-        x_fwd = torch.stack(tensor_list, dim=1)
-        x_rev = torch.stack(tensor_list, dim=1)
-        output = self.conv6(x_fwd, x_rev)
+        if self.bottleneck_type in ["CLSTM", "CGRU"]:
+            x_fwd = torch.stack(tensor_list, dim=1)
+            x_rev = torch.stack(tensor_list[::-1], dim=1)
+            output = self.conv6(x_fwd, x_rev)
+        elif self.bottleneck_type == "CONV":
+            assert len(tensor_list) == 1, "Wrong number of timesteps."
+            x_fwd = tensor_list[0]
+            output = self.conv6(x_fwd)
+            output = output[:, None, ...] # B C H W -> B 1 C H W
         return output
 
     def decoder(self, input_tensor, encoder_outputs):
@@ -282,10 +298,11 @@ class FlowInterpolationModel(nn.Module):
         self.cross_skip_connect = cross_skip
         # skip connection from stage1 to stage2
         self.cfg = cfg
-        assert self.cfg.getboolean("STAGE2", "CLSTM"), "CLSTM expected in stage 2."
-        log.info("CLSTM in stage2.")
+        self.bottleneck_type = self.cfg.get("MODEL", "BOTTLENECK")
+        self.cross_skip_connect = cross_skip
+        log.info("Stage 2 model.")
+        log.info("Encoder: UNET.  Bottleneck: %s."%self.bottleneck_type)
         self.build_model(in_channels, out_channels)
-        self.squash = nn.Sigmoid()
 
     def build_model(self, in_channels, out_channels):
         """
@@ -327,8 +344,16 @@ class FlowInterpolationModel(nn.Module):
         # block 6
         self.pool6 = avg_pool(kernel_size=2, stride=None, padding=0) # 1/32
 
-        self.conv6 = ConvBLSTM(in_channels=512, hidden_channels=512, kernel_size=(3, 3),
-                                   num_layers=2, batch_first=True)
+        if self.bottleneck_type == "CONV":
+            self.conv6 = nn.Sequential(conv(512, 512, kernel_size=3),
+                                       conv(512, 512, kernel_size=3))
+
+        elif self.bottleneck_type == "CLSTM":
+            self.conv6 = ConvBLSTM(in_channels=512, hidden_channels=512,
+                                    kernel_size=(3, 3), num_layers=2, batch_first=True)
+        elif self.bottleneck_type == "CGRU":
+            self.conv6 = ConvBGRU(in_channels=512, hidden_channels=512,
+                                   kernel_size=(3, 3), num_layers=2, batch_first=True)
 
         # block 7
 
@@ -504,13 +529,18 @@ class FlowInterpolationModel(nn.Module):
         if self.verbose:
             log.info("Output Block 11: " + str(final_out.shape))
 
-        return None, final_out
+        return final_out
 
     def bottleneck(self, tensor_list):
-        x_fwd = torch.stack(tensor_list, dim=1)
-        x_rev = list(reversed(tensor_list))
-        x_rev = torch.stack(x_rev, dim=1)
-        output = self.conv6(x_fwd, x_rev)
+        if self.bottleneck_type in ["CLSTM", "CGRU"]:
+            x_fwd = torch.stack(tensor_list, dim=1)
+            x_rev = torch.stack(tensor_list[::-1], dim=1)
+            output = self.conv6(x_fwd, x_rev)
+        elif self.bottleneck_type == "CONV":
+            assert len(tensor_list) == 1, "Wrong number of timesteps."
+            x_fwd = tensor_list[0]
+            output = self.conv6(x_fwd)
+            output = output[:, None, ...] # B C H W -> B 1 C H W
         return output
 
     def forward(self, unet_in, stage1_encoder_output=None):
@@ -603,7 +633,7 @@ class FlowInterpolationModel(nn.Module):
 
         v_1t = v_1t[:, None, ...] # making dimensions compatible
         
-        v_1t = self.squash(v_1t)
+        v_1t = torch.sigmoid(v_1t)
 
         v_0t = 1 - v_1t # Visibility Map 0->t
 
@@ -675,6 +705,9 @@ def get_model(path, in_channels, out_channels, cross_skip, verbose=False, stage=
             log.info("Not loading weights for stage %s." % stage)
 
         return model
+
+    else:
+        raise Exception("Expected stage = 1 or 2. Got stage = %s."%stage)
 
 
 if __name__=='__main__':
