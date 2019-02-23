@@ -23,15 +23,40 @@ class Reader(Dataset):
         """
 
         self.cfg = cfg
-        # self.compute_scale_factors()
         self.clips = self.read_clip_list(split)
         self.split = split
-        self.reqd_images = 8 * (self.cfg.getint("TRAIN","N_FRAMES") -1 )+ 1
-        # log.info(split+ ": Extracted clip list.")
+        REQD_IMAGES={2: 9, 4:25, 6:41, 8:57}
+        self.reqd_images = REQD_IMAGES[self.cfg.getint("TRAIN","N_FRAMES")]
         self.eval_mode = eval_mode
         self.reqd_idx = self.get_reqd_idx()
         self.custom_transform = transform
 
+    def get_start_end(self, img_paths):
+        """
+        gets start-end indexes for each N_FRAMES setting such that the most intermediate frames of the full sample are at the center.
+        """
+        assert len(img_paths)==57, "Expected 8 frames per sample."
+        n_frames = self.cfg.getint("TRAIN", "N_FRAMES")
+
+        if self.eval_mode:
+            if n_frames==2:
+                return (24, 33)
+            elif n_frames==4:
+                return (16, 41)
+            elif n_frames==6:
+                return (8, 49)
+            elif n_frames==8:
+                return (0, 57)
+            else:
+                raise Exception("Incorrect number of input frames.")
+        else:
+           if len(img_paths)>self.reqd_images:
+               start_idx = np.random.randint(0, len(img_paths)- self.reqd_images + 1)
+               end_idx = start_idx + self.reqd_images
+               return (start_idx, end_idx)
+           else:
+               return (0, 57)
+        
     def read_clip_list(self, split):
         """
         :param split: TRAIN/VAL/TEST
@@ -61,11 +86,11 @@ class Reader(Dataset):
         t_sample = self.cfg.get("MISC", "T_SAMPLE")
         n_frames = self.cfg.getint("TRAIN", "N_FRAMES")
         if t_sample == "NIL":
-            t_index = [i * 8 for i in range(n_frames)]
-            mid_idx = int(np.mean(t_index))
+            t_index = [i * 8 for i in range(n_frames)] # [0, 8, 16, 24 ... ] input frames.
+            mid_idx = int(np.mean(t_index)) 
             t1 = mid_idx - 3
             t2 = t1 + 7
-            t_index.extend(range(t1, t2))  # intermediate frames to be interpolated.
+            t_index.extend(range(t1, t2))  # most intermediate frames to be interpolated.
             t_index = sorted(t_index)
 
         elif t_sample == "FIXED":
@@ -124,16 +149,9 @@ class Reader(Dataset):
         :param idx: index of sample clip in dataset
         :return: Gets the required sample, and ensures only 9 frames from the clip are returned.
         """
-
         img_paths = self.clips[idx]
-        if len(img_paths)>self.reqd_images and not self.eval_mode:
-            start_idx = np.random.randint(0, len(img_paths)- self.reqd_images + 1)
-            img_paths = img_paths[start_idx:start_idx+self.reqd_images]
-        elif len(img_paths)>self.reqd_images and self.eval_mode:
-            mid_idx = len(img_paths)//2
-            start = mid_idx - self.reqd_images//2
-            end = start + self.reqd_images
-            img_paths = img_paths[start:end]
+        start, end = self.get_start_end(img_paths)
+        img_paths = img_paths[start:end]
         assert len(img_paths)==self.reqd_images, "Incorrect length of input sequence."
         if self.split=="TRAIN" and np.random.randint(0, 2)==1:
             img_paths = img_paths[::-1]
@@ -190,7 +208,7 @@ def get_transform(config, split, eval_mode):
     if eval_mode:
         custom_transform = transforms.Compose([Normalize(pix_mean, pix_std),
                                                ToTensor(), EvalPad(torch.nn.ZeroPad2d([0,0,8,8]))])
-    elif split == "VAL":
+    elif split == "VAL" and not eval_mode:
         crop_imh = config.getint('VAL', 'CROP_IMH')
         crop_imw = config.getint('VAL', 'CROP_IMW')
         custom_transform = transforms.Compose([
@@ -199,7 +217,7 @@ def get_transform(config, split, eval_mode):
             ToTensor()
         ])
 
-    elif split == "TRAIN":
+    elif split == "TRAIN" and not eval_mode:
         crop_imh = config.getint('TRAIN', 'CROP_IMH')
         crop_imw = config.getint('TRAIN', 'CROP_IMW')
         custom_transform = transforms.Compose([
@@ -230,7 +248,9 @@ def data_generator(config, split, eval_mode=False):
     n_frames = config.getint("TRAIN", "N_FRAMES")
     log.info("Model trained with %s frame input."%n_frames)
 
-    adobe_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=n_workers,
+    shuffle_flag = not eval_mode
+    log.info("Shuffle: %s"%shuffle_flag)
+    adobe_loader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle_flag, num_workers=n_workers,
                               worker_init_fn=lambda _: np.random.seed(int(torch.initial_seed()%(2**32 -1))),
                               collate_fn=lambda batch: collate_data(batch, t_sample),
                               pin_memory=True)
@@ -259,16 +279,20 @@ if __name__ == '__main__':
     logging.basicConfig(filename=args.log, level=logging.INFO)
 
     config = configparser.RawConfigParser()
-    config.read(args.config)
+    config.read("/home/sreenivasv/CS701/SuperSloMo-PyTorch/code/SuperSloMo/utils/ssmr.ini")
+    # config.read(args.config)
     logging.info("Read config")
+
     import time
     total = 0
     
     for epoch in range(10):
-        samples = data_generator(config, "TRAIN")
+        samples = data_generator(config, "VAL", eval_mode=True)
         tic = time.time()
-        for x in samples:
-            pass
+        for idx, x in enumerate(samples):
+            log.info(idx)
+            if idx > 10:
+                exit(0)
         toc = time.time()
         tic = time.time()
         total += toc - tic

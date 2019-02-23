@@ -83,7 +83,6 @@ def denormalize(batch):
     return batch
 
 
-
 def interpolate_frames(ssm_model, current_batch, interp_locations, info, iteration):
     interpolation_results = []
     data_batch = current_batch.cuda().float()
@@ -137,6 +136,7 @@ def get_interp_idx(n_frames):
     else:
         raise Exception("Wrong number of frames : %s"%n_frames)
 
+
 if __name__ == '__main__':
 
     args = getargs()
@@ -167,7 +167,7 @@ if __name__ == '__main__':
         iteration +=1
         log.info("Iteration: %s"%iteration)
         output_batch, targets = interpolate_frames(ssm_net, aBatch, interp_locations, info=None, iteration=iteration)
-        PSNR_score, SSIM_score, IE_score = get_scores(output_batch, targets)
+        PSNR_score, IE_score, SSIM_score = get_scores(output_batch, targets)
         video_PSNR.extend(PSNR_score)
         video_IE.extend(IE_score)
         video_SSIM.extend(SSIM_score)
