@@ -35,20 +35,21 @@ def process_single_dir(im_dir, num_frames_per_clip=9, step=10):
 def process_data_dir(data_dir, num_frames_per_clip, step):
     seqs = sorted(glob.glob(os.path.join(data_dir, '*')))
     print('There are %d sequences in %s' % (len(seqs), data_dir))
-
+    train_clips = seqs
     # np.random.shuffle(seqs)
     # num_train = int(len(seqs) * 0.9)
     # train_seqs = seqs[:num_train]
     # val_seqs = seqs[num_train:]
 
-    with open("/home/sreenivasv/original.pkl", "rb") as f:
-        train_clips = pickle.load(f)
+    # with open("/home/sreenivasv/original.pkl", "rb") as f:
+    #     train_clips = pickle.load(f)
 
-    with open("/home/sreenivasv/original_val.pkl", "rb") as f:
-        val_clips = pickle.load(f)
+    # with open("/home/sreenivasv/original_val.pkl", "rb") as f:
+    #     val_clips = pickle.load(f)
 
     train_seqs = [os.path.join(data_dir, clip) for clip in train_clips]
-    val_seqs = [os.path.join(data_dir, clip) for clip in val_clips]
+    # val_seqs = [os.path.join(data_dir, clip) for clip in val_clips]
+    val_seqs = []
     print('%d seqs for training and %d for validation.' % (len(train_seqs), len(val_seqs)))
     train_clips = []
     for s in train_seqs:
@@ -57,18 +58,19 @@ def process_data_dir(data_dir, num_frames_per_clip, step):
     print('%d clips found for training.' % len(train_clips))
 
     val_clips = []
-    for s in val_seqs:
-        clips = process_single_dir(s, num_frames_per_clip, step)
-        val_clips.extend(clips)
-    print('%d clips found for validation.' % len(val_clips))
+    # for s in val_seqs:
+    #     clips = process_single_dir(s, num_frames_per_clip, step)
+    #     val_clips.extend(clips)
+    # print('%d clips found for validation.' % len(val_clips))
     return train_clips, val_clips
 
 if __name__ == '__main__':
-    data_dirs = ['/mnt/nfs/work1/elm/hzjiang/Data/VideoInterpolation/Adobe240fps/Clips']
-    # data_dirs = ['/home/huaizuj/Data/Adobe240fps/Clips']
+    # data_dirs = ['/mnt/nfs/work1/elm/hzjiang/Data/VideoInterpolation/Adobe240fps/Clips']
+    # data_dirs = ['/mnt/nfs/work1/elm/hzjiang/Data/VideoInterpolation/Fastec-video-interp/Clips-half-res']
+    data_dirs = ['/mnt/nfs/work1/elm/hzjiang/Data/VideoInterpolation/Sintel-video-interp/Clips-half-res']
 
-    num_frames_per_clip = 57
-    step = -40
+    num_frames_per_clip = 225
+    step = -160
 
     all_train_clips = []
     all_val_clips = []
@@ -85,12 +87,12 @@ if __name__ == '__main__':
             for n in clp:
                 f.write('%s\n' % n)
 
-    with open('val_clips_video_interp_all.txt', 'w') as f:
+    # with open('val_clips_video_interp_all.txt', 'w') as f:
         
-        for clp in all_val_clips:
-            f.write('%d\n' % len(clp))
-            for n in clp:
-                f.write('%s\n' % n)
+    #     for clp in all_val_clips:
+    #         f.write('%d\n' % len(clp))
+    #         for n in clp:
+    #             f.write('%s\n' % n)
 
     # im_dir = '/home/huaizuj/Data/Adobe240fps/Clips/clip_00001'
     # clips = process_single_dir(im_dir, 30)
