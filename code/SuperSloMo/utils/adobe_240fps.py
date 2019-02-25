@@ -28,7 +28,6 @@ class Reader(Dataset):
         REQD_IMAGES={2: 9, 4:25, 6:41, 8:57}
         self.reqd_images = REQD_IMAGES[self.cfg.getint("TRAIN","N_FRAMES")]
         self.eval_mode = eval_mode
-        self.reqd_idx = self.get_reqd_idx()
         self.custom_transform = transform
 
     def get_start_end(self, img_paths):
@@ -110,15 +109,29 @@ class Reader(Dataset):
 
             t_index = sorted(input_idx + interp_idx)
             assert len(t_index) == (2 * n_frames - 1), "Incorrect number of frames."
-
+        
         elif t_sample == "RANDOM":
-            raise NotImplementedError
-            t_index = np.random.randint(1, 8)  # uniform sampling
-            t_index = [0, 8, 8 + t_index, 16, 24]
+            if n_frames == 2:
+                input_idx = [0, 8]
+                interp_idx = [np.random.randint(1, 8)]
+            elif n_frames == 4:
+                input_idx = [0, 8, 16, 24]
+                interp_idx = [np.random.randint(1, 8) + i*8 for i in range(n_frames-1)]
+            elif n_frames == 6:
+                input_idx = [0, 8, 16, 24, 32, 40]
+                interp_idx = [np.random.randint(1, 8) + i*8 for i in range(n_frames-1)]
+                
+            elif n_frames == 8:
+                input_idx = [0, 8, 16, 24, 32, 40, 48, 56]
+                interp_idx = [np.random.randint(1, 8) + i*8 for i in range(n_frames-1)]
+
+            t_index = sorted(input_idx + interp_idx)
+            assert len(t_index) == (2 * n_frames - 1), "Incorrect number of frames."
+            
         else:
             raise Exception("Invalid sampling argument.")
 
-        return t_index
+        return t_index, interp_idx
 
     def compute_scale_factors(self):
         """
@@ -155,29 +168,14 @@ class Reader(Dataset):
         assert len(img_paths)==self.reqd_images, "Incorrect length of input sequence."
         if self.split=="TRAIN" and np.random.randint(0, 2)==1:
             img_paths = img_paths[::-1]
-
-        sample = read_sample(img_paths, self.reqd_idx)
+        reqd_idx, interp_idx = self.get_reqd_idx() # handles the sampling.
+ 
+        sample = read_sample(img_paths, reqd_idx)
         sample = self.custom_transform(sample)
 
-        return sample
+        interp_idx = torch.Tensor(interp_idx).view(-1, 1, 1, 1) # T C H W
 
-
-def collate_data(aBatch, t_sample):
-    """
-    :param aBatch: List[List] B samples of 8 frames (frames given as paths)
-    :param t_sample: NIL => No sampling. Read all frames.
-                     FIXED => Fixed sampling of middle frame. t_index= 4
-                     RANDOM => Uniform random sampling from 1, 7.
-    :return: tensor N, K, C, H, W and index of time step sampled (None, or int)
-    """
-
-    frame_buffer = torch.stack(aBatch)
-
-    if t_sample=="FIXED":
-        return frame_buffer, 4 # middle index. lol such bad code.
-
-    else:
-        return frame_buffer, None
+        return sample, interp_idx
 
     
 def read_sample(img_paths, t_index=None):
@@ -252,7 +250,6 @@ def data_generator(config, split, eval_mode=False):
     log.info("Shuffle: %s"%shuffle_flag)
     adobe_loader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle_flag, num_workers=n_workers,
                               worker_init_fn=lambda _: np.random.seed(int(torch.initial_seed()%(2**32 -1))),
-                              collate_fn=lambda batch: collate_data(batch, t_sample),
                               pin_memory=True)
 
     return adobe_loader
@@ -287,10 +284,13 @@ if __name__ == '__main__':
     total = 0
     
     for epoch in range(10):
-        samples = data_generator(config, "VAL", eval_mode=True)
+        samples = data_generator(config, "TRAIN")
         tic = time.time()
         for idx, x in enumerate(samples):
-            log.info(idx)
+            batch, t_idx = x
+            log.info(batch.shape)
+            log.info(t_idx.shape)
+            log.info(t_idx.squeeze())
             if idx > 10:
                 exit(0)
         toc = time.time()

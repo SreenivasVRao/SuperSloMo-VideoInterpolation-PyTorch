@@ -147,7 +147,8 @@ class FullModel(nn.Module):
         for time_step in range(T):
             img_pair = image_pairs[:, time_step, ...]
             stage1_encoding, flow_tensor = flowC_outputs[time_step]
-            input_tensor = self.stage2_model.compute_inputs(img_pair, flow_tensor, t=t_interp)
+            sampled_t = t_interp[:, time_step, ...] # these are the actual values of t in 0-1 range as specified in Jiang et. al. (2018)
+            input_tensor = self.stage2_model.compute_inputs(img_pair, flow_tensor, t=sampled_t)
             stage2_inputs.append(input_tensor)
             combined_encoding.append(stage1_encoding)
 
@@ -160,12 +161,14 @@ class FullModel(nn.Module):
         est_img_t = None
 
         for t in range(T):
+
+            sampled_t = t_interp[:, t, ...] # these are the actual values of t in 0-1 range as specified in Jiang et. al. (2018)
             flowI_out = flowI_outputs[t]
             flowI_in = stage2_inputs[:, t, ...]
             img_pair = image_pairs[:, t, ...]
 
             interpolation_result = self.stage2_model.compute_output_image(img_pair, flowI_in,
-                                                                          flowI_out, t=t_interp)
+                                                                          flowI_out, t=sampled_t)
             flow_tensor = flowC_outputs[t][1]
             if compute_loss:
                 assert target_images is not None, "No target found for loss."

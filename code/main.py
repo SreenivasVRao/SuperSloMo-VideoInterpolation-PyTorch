@@ -115,8 +115,8 @@ class SSMNet:
         :return: if get_interpolation is set, returns interpolation result as BCHW Variable.
         otherwise returns the losses.
         """
-        assert 1<=t_idx<=7, "Invalid time-step: "+str(t_idx)
-        t_interp = float(t_idx)/8
+        t_interp = t_idx/8
+        t_interp = t_interp.cuda().float()
         data_batch = data_batch.cuda().float()
         image_tensor = data_batch[:, 0::2, ...] # indices = I0, I1, I2, I3
         img_t = data_batch[:, 1::2, ...] # most intermediate frame.
