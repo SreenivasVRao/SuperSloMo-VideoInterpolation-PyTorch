@@ -117,6 +117,7 @@ class SSMNet:
         """
         t_interp = t_idx/8
         t_interp = t_interp.cuda().float()
+        assert bool((0<t_interp).all() and (t_interp<1).all()), "Interpolation values out of bounds."
         data_batch = data_batch.cuda().float()
         image_tensor = data_batch[:, 0::2, ...] # indices = I0, I1, I2, I3
         img_t = data_batch[:, 1::2, ...] # most intermediate frame.

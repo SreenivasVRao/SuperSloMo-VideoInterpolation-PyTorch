@@ -91,6 +91,7 @@ class Reader(Dataset):
             t2 = t1 + 7
             t_index.extend(range(t1, t2))  # most intermediate frames to be interpolated.
             t_index = sorted(t_index)
+            interp_idx = None
 
         elif t_sample == "FIXED":
             # get I_0, I_0.5, I_1, I_1.5, I_2, ... I_n.
@@ -111,23 +112,26 @@ class Reader(Dataset):
             assert len(t_index) == (2 * n_frames - 1), "Incorrect number of frames."
         
         elif t_sample == "RANDOM":
+            interp_idx = [np.random.randint(1, 8) for _ in range(n_frames - 1)]
+            # used to calculate t_interp.
+            
+            sample_idx = [t + i*8 for i, t in enumerate(interp_idx)]
+            # add frame offset.
+            
             if n_frames == 2:
                 input_idx = [0, 8]
-                interp_idx = [np.random.randint(1, 8)]
             elif n_frames == 4:
                 input_idx = [0, 8, 16, 24]
-                interp_idx = [np.random.randint(1, 8) + i*8 for i in range(n_frames-1)]
             elif n_frames == 6:
                 input_idx = [0, 8, 16, 24, 32, 40]
-                interp_idx = [np.random.randint(1, 8) + i*8 for i in range(n_frames-1)]
-                
             elif n_frames == 8:
                 input_idx = [0, 8, 16, 24, 32, 40, 48, 56]
-                interp_idx = [np.random.randint(1, 8) + i*8 for i in range(n_frames-1)]
-
-            t_index = sorted(input_idx + interp_idx)
-            assert len(t_index) == (2 * n_frames - 1), "Incorrect number of frames."
+            else:
+                raise Exception("Unsupported n_frames %s"%n_frames)
             
+            t_index = sorted(input_idx + sample_idx)
+            assert len(t_index) == (2 * n_frames - 1), "Incorrect number of frames."
+                        
         else:
             raise Exception("Invalid sampling argument.")
 
@@ -173,9 +177,12 @@ class Reader(Dataset):
         sample = read_sample(img_paths, reqd_idx)
         sample = self.custom_transform(sample)
 
-        interp_idx = torch.Tensor(interp_idx).view(-1, 1, 1, 1) # T C H W
+        if interp_idx is not None:
+            interp_idx = torch.Tensor(interp_idx).view(-1, 1, 1, 1) # T C H W
 
-        return sample, interp_idx
+            return sample, interp_idx
+        else:
+            return sample
 
     
 def read_sample(img_paths, t_index=None):
