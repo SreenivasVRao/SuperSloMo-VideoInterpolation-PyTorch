@@ -175,6 +175,30 @@ class Evaluator:
         batch = batch * 255.0
         return batch
 
+    def get_t_interp(self, t_mid, sample_type):
+        n_interp = 32 if self.dataset=="SINTEL_HFR" else 8
+
+        if self.n_frames > 2:
+            if sample_type=="A":
+                left  = [np.random.randint(1, n_interp) for _ in range((self.n_frames-1) // 2)]
+                right = [np.random.randint(1, n_interp) for _ in range((self.n_frames-1) // 2)]
+                t_interp = left+[t_mid]+right
+            elif sample_type=="B":
+                t_interp = [t_mid]*(self.n_frames-1)
+        else:
+            t_interp = [t_mid]
+
+        assert len(t_interp) == (self.n_frames -1) , "Incorrect number of interpolation points."
+        
+        raw_values = t_interp[:]
+
+        t_interp = torch.Tensor(t_interp).view(1, (self.n_frames-1), 1, 1, 1) # B T C H W
+
+        t_interp = t_interp.cuda().float()
+        t_interp = t_interp/n_interp
+        assert (0<t_interp).all() and (t_interp<1).all(), "Incorrect values."
+        return t_interp, raw_values
+
     def interpolate_frames(self, current_batch, info, iteration):
 
         data_batch = current_batch.cuda().float()
@@ -194,17 +218,19 @@ class Evaluator:
         interpolation_results = []
 
         for idx, t_idx in enumerate(self.interp_locations):
-            if self.dataset!= "SINTEL_HFR":
-                t_interp = float(idx+1)/8
-            else:
-                t_interp = float(idx+1)/32
-
             img_t = data_batch[:, t_idx, ...] # most intermediate frames.
+            t_interp, raw_values = self.get_t_interp(idx+1, sample_type="B") # 1 - 7 or 1 - 31 depending on dataset.
 
-            if iteration==1:
-                log.info("Interpolating: T=%s t=%s"%(idx+1, t_interp))
+            if iteration==1 and self.dataset!="SINTEL_HFR":
+                log.info("Interpolating: T=%s t=%s"%(idx+1, float((idx+1)/8)))
+                log.info(raw_values)
+            elif iteration==1 and self.dataset=="SINTEL_HFR":
+                log.info("Interpolating: T=%s t=%s"%(idx+1, float((idx+1)/32)))
+                log.info(raw_values)
 
-            est_img_t = self.model(image_tensor, info, t_interp, 'VAL', iteration, compute_loss=False)
+            t_interp = t_interp.expand(image_tensor.shape[0], 3, 1, 1, 1) # for multiple gpus.
+
+            est_img_t = self.model(image_tensor, info, t_interp, iteration=iteration, compute_loss=False)
             interpolation_results.append(est_img_t)
             ground_truths.append(img_t)
 
@@ -225,7 +251,7 @@ class Evaluator:
     def run_evaluation(self):
         iteration = 0
 
-        for aBatch, t_idx in self.val_samples:
+        for aBatch, _ in self.val_samples:
             log.info("Iteration: %s" % iteration)
             output_batch, targets = self.interpolate_frames(aBatch, info=None, iteration=iteration)
             PSNR_score, IE_score, SSIM_score= self.get_scores(output_batch, targets)
