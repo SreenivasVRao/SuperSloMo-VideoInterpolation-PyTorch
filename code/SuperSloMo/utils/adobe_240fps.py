@@ -7,7 +7,7 @@ from math import ceil
 import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
-from common import (AugmentData, ResizeCrop, EvalPad, Normalize, ToTensor)
+from common import (AugmentData, EvalPad, Normalize, ToTensor, RandomCrop)
 
 
 cv2.setNumThreads(0)
@@ -38,16 +38,17 @@ class Reader(Dataset):
         n_frames = self.cfg.getint("TRAIN", "N_FRAMES")
 
         if self.eval_mode:
-            if n_frames==2:
-                return (24, 33)
-            elif n_frames==4:
-                return (16, 41)
-            elif n_frames==6:
-                return (8, 49)
-            elif n_frames==8:
-                return (0, 57)
-            else:
-                raise Exception("Incorrect number of input frames.")
+            return (0, 57)
+            # if n_frames==2:
+            #     return (24, 33)
+            # elif n_frames==4:
+            #     return (16, 41)
+            # elif n_frames==6:
+            #     return (8, 49)
+            # elif n_frames==8:
+            #     return (0, 57)
+            # else:
+            #     raise Exception("Incorrect number of input frames.")
         else:
            if len(img_paths)>self.reqd_images:
                start_idx = np.random.randint(0, len(img_paths)- self.reqd_images + 1)
@@ -85,13 +86,7 @@ class Reader(Dataset):
         t_sample = self.cfg.get("MISC", "T_SAMPLE")
         n_frames = self.cfg.getint("TRAIN", "N_FRAMES")
         if t_sample == "NIL":
-            t_index = [i * 8 for i in range(n_frames)] # [0, 8, 16, 24 ... ] input frames.
-            mid_idx = int(np.mean(t_index)) 
-            t1 = mid_idx - 3
-            t2 = t1 + 7
-            t_index.extend(range(t1, t2))  # most intermediate frames to be interpolated.
-            t_index = sorted(t_index)
-            interp_idx = None
+            raise NotImplementedError
 
         elif t_sample == "FIXED":
             # get I_0, I_0.5, I_1, I_1.5, I_2, ... I_n.
@@ -112,9 +107,9 @@ class Reader(Dataset):
             assert len(t_index) == (2 * n_frames - 1), "Incorrect number of frames."
         
         elif t_sample == "RANDOM":
-            interp_idx = [np.random.randint(1, 8) for _ in range(n_frames - 1)]
+
+            interp_idx = [np.random.randint(1, 8)] *(n_frames - 1)
             # used to calculate t_interp.
-            
             sample_idx = [t + i*8 for i, t in enumerate(interp_idx)]
             # add frame offset.
             
@@ -217,7 +212,7 @@ def get_transform(config, split, eval_mode):
         crop_imh = config.getint('VAL', 'CROP_IMH')
         crop_imw = config.getint('VAL', 'CROP_IMW')
         custom_transform = transforms.Compose([
-            ResizeCrop(crop_imh, crop_imw),
+            RandomCrop((crop_imh, crop_imw)),
             Normalize(pix_mean, pix_std),
             ToTensor()
         ])
@@ -226,7 +221,7 @@ def get_transform(config, split, eval_mode):
         crop_imh = config.getint('TRAIN', 'CROP_IMH')
         crop_imw = config.getint('TRAIN', 'CROP_IMW')
         custom_transform = transforms.Compose([
-            ResizeCrop(crop_imh, crop_imw),
+            RandomCrop((crop_imh, crop_imw)),
             AugmentData(),
             Normalize(pix_mean, pix_std),
             ToTensor()
@@ -283,8 +278,8 @@ if __name__ == '__main__':
     logging.basicConfig(filename=args.log, level=logging.INFO)
 
     config = configparser.RawConfigParser()
-    config.read("/home/sreenivasv/CS701/SuperSloMo-PyTorch/code/SuperSloMo/utils/ssmr.ini")
-    # config.read(args.config)
+    # config.read("/home/sreenivasv/CS701/SuperSloMo-PyTorch/code/SuperSloMo/utils/ssmr.ini")
+    config.read(args.config)
     logging.info("Read config")
 
     import time
@@ -296,8 +291,6 @@ if __name__ == '__main__':
         for idx, x in enumerate(samples):
             batch, t_idx = x
             log.info(batch.shape)
-            log.info(t_idx.shape)
-            log.info(t_idx.squeeze())
             if idx > 10:
                 exit(0)
         toc = time.time()

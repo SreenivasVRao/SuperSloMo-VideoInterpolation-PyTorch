@@ -58,7 +58,7 @@ class SSMNet:
         log_dir = os.path.join(self.cfg.get("PROJECT","DIR"), "logs")
 
         os.makedirs(os.path.join(log_dir, self.expt_name, "plots"))
-        os.makedirs(os.path.join(log_dir, self.expt_name, "checkpoints"))
+        os.makedirs(os.path.join("/mnt/nfs/scratch1/sreenivasv/checkpoints", self.expt_name))
 
         self.writer = SummaryWriter(os.path.join(log_dir, self.expt_name, "plots"))
         self.get_hyperparams()
@@ -159,7 +159,8 @@ class SSMNet:
         iteration = 0
 
         train_info = None
-        adobe_train_samples = adobe_240fps.data_generator(self.cfg, split="TRAIN")
+        train_samples = adobe_240fps.data_generator(self.cfg, split="TRAIN")
+        # train_samples = NFS.data_generator(self.cfg, split="TRAIN")
         # val_info = adobe_240fps.get_data_info(self.cfg, split="VAL")
 
         for epoch in range(start, self.n_epochs+1):
@@ -167,7 +168,7 @@ class SSMNet:
             # adobe_val_samples = adobe_240fps.data_generator(self.cfg, split="VAL")
             lr_scheduler.step()
 
-            for train_batch in adobe_train_samples:
+            for train_batch in train_samples:
                 iteration +=1
                 if iteration%100==0:
                     log.info("Iterations: %s"%iteration)
@@ -207,7 +208,7 @@ class SSMNet:
                     'scheduler': lr_scheduler.state_dict()
                 }
 
-                fpath = os.path.join(self.cfg.get("PROJECT", "DIR"), "logs", self.expt_name, "checkpoints",
+                fpath = os.path.join("/mnt/nfs/scratch1/sreenivasv/checkpoints", self.expt_name,
                                      self.expt_name+"_EPOCH_"+str(epoch).zfill(4)+".pt")
 
                 torch.save(state, fpath)

@@ -8,7 +8,7 @@ import logging
 import torch
 import configparser, cv2, os, glob
 from argparse import ArgumentParser
-import adobe_240fps, slowflow, sintel_hfr
+import adobe_eval, slowflow, sintel_hfr
 
 import sys
 sys.path.insert(0, "/home/sreenivasv/CS701/SuperSloMo-PyTorch/code/SuperSloMo/models/")
@@ -68,7 +68,7 @@ class Evaluator:
 
         dataset = self.cfg.get("MISC", "DATASET")
         if dataset  == "ADOBE":
-            val_samples = adobe_240fps.data_generator(config, "VAL", eval_mode=True)
+            val_samples = adobe_eval.data_generator(config, "VAL", eval_mode=True)
         elif dataset == "SINTEL_HFR":
             val_samples = sintel_hfr.data_generator(config, "VAL", eval_mode=True)
         elif dataset  == "SLOWFLOW":
@@ -228,7 +228,7 @@ class Evaluator:
                 log.info("Interpolating: T=%s t=%s"%(idx+1, float((idx+1)/32)))
                 log.info(raw_values)
 
-            t_interp = t_interp.expand(image_tensor.shape[0], 3, 1, 1, 1) # for multiple gpus.
+            t_interp = t_interp.expand(image_tensor.shape[0], self.n_frames - 1, 1, 1, 1) # for multiple gpus.
 
             est_img_t = self.model(image_tensor, info, t_interp, iteration=iteration, compute_loss=False)
             interpolation_results.append(est_img_t)
@@ -252,6 +252,7 @@ class Evaluator:
         iteration = 0
 
         for aBatch, _ in self.val_samples:
+        # for aBatch in self.val_samples:
             log.info("Iteration: %s" % iteration)
             output_batch, targets = self.interpolate_frames(aBatch, info=None, iteration=iteration)
             PSNR_score, IE_score, SSIM_score= self.get_scores(output_batch, targets)

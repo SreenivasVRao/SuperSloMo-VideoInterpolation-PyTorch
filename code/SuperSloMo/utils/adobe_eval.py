@@ -28,10 +28,10 @@ class Reader(Dataset):
 
         self.custom_transform = transform
 
-        REQD_IMAGES = {2: 33, 4: 97, 6: 161, 8: 225}
+        REQD_IMAGES={2:9, 4:25, 6:41, 8:57}
         self.n_frames = self.cfg.getint("TRAIN", "N_FRAMES")
         self.reqd_images = REQD_IMAGES[self.n_frames]
-        self.interp_factor = 32
+        self.interp_factor = 8
         log.info("Using %s input frames." % self.n_frames)
 
         self.pad_mode = self.cfg.get("EVAL", "PADDING")
@@ -45,10 +45,13 @@ class Reader(Dataset):
         :return: list of all clips in split
         """
 
-        SRC_DIR = self.cfg.get("SINTEL_HFR_DATA", "ROOTDIR")
+        clips_src = self.cfg.get("ADOBE_DATA", split+"_clips")
 
-        clips = glob.glob(SRC_DIR+"/*")
-        log.info("Found %s clips."%(len(clips)))
+        with open(clips_src, 'rb') as f:
+            clips = pickle.load(f)
+        log.info("Found %s clips for split: %s "%(len(clips), split))
+
+        SRC_DIR = self.cfg.get("ADOBE_DATA", "ROOTDIR")
 
         data = []
 
@@ -135,10 +138,10 @@ class Reader(Dataset):
 
     def get_reqd_idx(self):
         n_frames = self.cfg.getint("TRAIN", "N_FRAMES")
-        t_index = [i * self.interp_factor for i in range(n_frames)] # [0, 32, 64, 96 ... ] input frames.
+        t_index = [i * self.interp_factor for i in range(n_frames)] # [0, 8, 16, 24 ... ] input frames.
         mid_idx = int(np.mean(t_index)) 
-        t1 = mid_idx - (31//2)
-        t2 = t1 + 31
+        t1 = mid_idx - 3
+        t2 = t1 + 7
         t_index.extend(range(t1, t2))  # most intermediate frames to be interpolated.
         t_index = sorted(t_index)
         interp_idx = None
@@ -188,7 +191,8 @@ def get_transform(config, split, eval_mode):
     pix_std = [float(p) for p in pix_std]
 
     if eval_mode:
-        custom_transform = transforms.Compose([Normalize(pix_mean, pix_std), ToTensor(), EvalPad(torch.nn.ZeroPad2d([0,0,6,6]))])
+        custom_transform = transforms.Compose([Normalize(pix_mean, pix_std),
+                                               ToTensor(), EvalPad(torch.nn.ZeroPad2d([0,0,8,8]))])
     else:
         raise Exception("This module is not useful for training phase.")
     return custom_transform
@@ -210,11 +214,11 @@ def data_generator(config, split, eval_mode=True):
 
     shuffle_flag = not eval_mode
     log.info("Shuffle: %s"%shuffle_flag)
-    slowflow_loader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle_flag, num_workers=n_workers,
+    adobe_loader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle_flag, num_workers=n_workers,
                               worker_init_fn=lambda _: np.random.seed(int(torch.initial_seed()%(2**32 -1))),
                               pin_memory=True)
 
-    return slowflow_loader
+    return adobe_loader
 
 
 if __name__ == '__main__':
@@ -240,5 +244,12 @@ if __name__ == '__main__':
     samples = data_generator(config, "VAL")
     for idx, batch in enumerate(samples):
         data, n_avail = batch
+        data = data.permute(0, 1, 3, 4, 2)
+        log.info(n_avail.shape)
         log.info(data.shape)
+        data = data.cpu().numpy()
+        data = data[0, ...]
+        for t in range(data.shape[0]):
+            img = data[t, ...]
+            cv2.imwrite(str(t).zfill(3)+'.png', img[..., ::-1])
         break

@@ -2,6 +2,7 @@ import torch
 import torch.nn
 import numpy as np
 import cv2
+import numbers
 
 cv2.setNumThreads(0)
 
@@ -64,6 +65,34 @@ class AugmentData(object):
 
         return frames
 
+
+class RandomCrop(object):
+    """Crops the given PIL.Image at a random location to have a region of
+    the given size. size can be a tuple (target_height, target_width)
+    or an integer, in which case the target will be of a square shape (size, size)
+    """
+
+    def __init__(self, size):
+        if isinstance(size, numbers.Number):
+            self.size = (int(size), int(size))
+        else:
+            self.size = size
+
+    def __call__(self, inputs):
+        h, w, _ = inputs[0].shape
+        th, tw = self.size
+        if w == tw and h == th:
+            return inputs, targets
+
+        x1 = np.random.randint(0, w - tw)
+        y1 = np.random.randint(0, h - th)
+
+        new_frames = np.zeros((inputs.shape[0], th, tw, 3))
+
+        for i in range(inputs.shape[0]):
+            new_frames[i, ...] = inputs[i, ...][y1: y1 + th, x1: x1 + tw]
+
+        return new_frames
 
 class ResizeCrop(object):
     """
