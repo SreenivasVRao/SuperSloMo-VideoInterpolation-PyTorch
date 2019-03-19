@@ -34,9 +34,6 @@ class Reader(Dataset):
         self.interp_factor = 8
         log.info("Using %s input frames." % self.n_frames)
 
-        self.pad_mode = self.cfg.get("EVAL", "PADDING")
-        assert self.pad_mode in ["NONE", "REPLICATE"]
-
         self.clips = self.read_clip_list(split)
 
     def read_clip_list(self, split):

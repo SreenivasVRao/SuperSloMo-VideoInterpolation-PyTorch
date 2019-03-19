@@ -1,5 +1,5 @@
 from SuperSloMo.models import SSMR
-from SuperSloMo.utils import adobe_240fps
+from SuperSloMo.utils import adobe_240fps, NFS, Vimeo90K_v2, vimeo_adobe
 import numpy as np,  random
 import torch.optim
 import torch
@@ -128,7 +128,7 @@ class SSMNet:
         losses = losses.mean(dim=0) # averages the loss over the batch. Horrific code. [B, 4] -> [4]
         self.write_losses(losses, iteration, split)
 
-        if iteration%100==0:
+        if iteration%500==0:
             pred_img = est_img_t[0, ...]
             pix_mean = self.cfg.get('MODEL', 'PIXEL_MEAN').split(',')
             pix_mean = [float(p) for p in pix_mean]
@@ -155,6 +155,7 @@ class SSMNet:
         resume_epoch, optimizer, lr_scheduler = resume_trainer(self.cfg, optimizer, lr_scheduler)
 
         start = max(resume_epoch, 1)
+        
         log.info("Starting from Epoch: %s"%start)
         iteration = 0
 
@@ -162,7 +163,8 @@ class SSMNet:
         train_samples = adobe_240fps.data_generator(self.cfg, split="TRAIN")
         # train_samples = NFS.data_generator(self.cfg, split="TRAIN")
         # val_info = adobe_240fps.get_data_info(self.cfg, split="VAL")
-
+        # train_samples = Vimeo90K_v2.data_generator(self.cfg, split="TRAIN")
+        
         for epoch in range(start, self.n_epochs+1):
             # shuffles the data on each epoch
             # adobe_val_samples = adobe_240fps.data_generator(self.cfg, split="VAL")
@@ -181,21 +183,10 @@ class SSMNet:
                 optimizer.zero_grad()
                 train_loss.backward()
                 optimizer.step()
-                # try:
-                #     val_batch = next(adobe_val_samples)
-                # except StopIteration:
-                #     adobe_val_samples = adobe_240fps.data_generator(self.cfg, split="VAL")
-                #     val_batch = next(adobe_val_samples)
-
-                # data_batch, t_idx = val_batch
-                # if data_batch.shape[0]<torch.cuda.device_count():
-                #     continue
-                
-                # self.forward_pass(data_batch, val_info, "VAL", iteration, t_idx)
                     
             log.info("Epoch: "+str(epoch)+" Iteration: "+str(iteration))
-
             if epoch%self.save_every==0:
+
                 if isinstance(self.superslomo, torch.nn.DataParallel):
                     model = self.superslomo.module
                 else:
@@ -207,7 +198,8 @@ class SSMNet:
                     'optimizer': optimizer.state_dict(),
                     'scheduler': lr_scheduler.state_dict()
                 }
-
+                
+ 
                 fpath = os.path.join("/mnt/nfs/scratch1/sreenivasv/checkpoints", self.expt_name,
                                      self.expt_name+"_EPOCH_"+str(epoch).zfill(4)+".pt")
 

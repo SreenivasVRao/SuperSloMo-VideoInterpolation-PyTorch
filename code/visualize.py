@@ -1,7 +1,8 @@
-import ConfigParser, cv2, os, glob, logging
+import configparser, cv2, os, glob, logging
 from argparse import ArgumentParser
-import torch
-from SuperSloMo.models import SSM
+import torch, torch.nn as nn, torch.nn.functional as F
+from SuperSloMo.models import SSMR
+import numpy as np
 
 log = logging.getLogger(__name__)
 
@@ -14,93 +15,124 @@ def getargs():
     parser.add_argument("--expt", required=True,
                     help="Experiment Name.")
     parser.add_argument("--log", required=True, help="Path to logfile.")
-    parser.add_argument("-i", "--images", required=True, help = "Directory with input images.")
+    parser.add_argument("-d", "--directory", required=True, help = "Directory with input images.")
+    parser.add_argument("--fps", required=True, help="Required output fps. Either 60 or 240.")
     args = parser.parse_args()
     return args
 
+class Interpolator:
+    
+    def __init__(self, config, expt):
+        self.cfg = config
+        self.model = SSMR.full_model(self.cfg).cuda().eval()
+        log_dir = os.path.join(config.get("PROJECT", "DIR"), "logs")
+        img_dir = os.path.join(log_dir, expt, "images")
+        os.makedirs(img_dir)
+        self.img_dir = img_dir
+        self.n_frames = self.cfg.getint("TRAIN", "N_FRAMES")
 
-def get_image(path, flipFlag):
-    img = cv2.imread(path)
-    img = img/255.0
-    if flipFlag:
-        img = img.swapaxes(0, 1)
-    img = torch.from_numpy(img)
-    img = img.cuda().float()
-    img = img[None, ...]
-    img = img.permute(0, 3, 1, 2) # bhwc => bchw
-    pad = torch.nn.ZeroPad2d([0,0, 8, 8])
-    img = pad(img)
-    return img
+    def load_batch(self, sample):
+        """
+        Loads a sample batch of B T C H W float RGB tensor. range 0 - 255. B=1
+        """
+        frame_buffer = []
+        for img_path  in sample:
+            frame_buffer.append(cv2.imread(img_path)[:,:, ::-1]) # uses RGB format.
 
+        frame_buffer = np.array(frame_buffer)[None, ...] # 1 T H W C
+        frame_buffer = torch.from_numpy(frame_buffer).float().cuda()
+        frame_buffer = frame_buffer.permute(0, 1, 4, 2, 3) # B T H W C -> B T C H W tensor.
 
-args = getargs()
+        frame_buffer = F.pad(frame_buffer, [0, 0, 4, 4], mode='constant', value=0)
 
-config = ConfigParser.RawConfigParser()
-logging.basicConfig(filename=args.log, level=logging.INFO)
-config.read(args.config)
+        return frame_buffer
 
-log_dir = os.path.join(config.get("PROJECT", "DIR"), "logs")
-img_dir = os.path.join(log_dir, args.expt, "images")
-os.makedirs(img_dir)
+    def interpolate_frames(self, input_directory, fps240=True, img_type='png'):
+        log.info("Looking for %s images in %s. 240 FPS: %s" %(img_type, input_directory, fps240))
+        images_list = glob.glob(os.path.join(input_directory, "*."+img_type.lower()))
+        images_list.sort()
+        
+        count = 0
+        
+        for sample in self.sliding_window(images_list, fps240):
+            image_tensor = self.load_batch(sample) # B T C H W
+            t1 = image_tensor.shape[1]//2 - 1
+            t2 = image_tensor.shape[1]//2
+        
+            img_0 = image_tensor[0, t1, ...] # corresponds to interpolation at the center.
+            img_1 = image_tensor[0, t2, ...] # C H W shape.
 
-superslomo = SSM.full_model(config).cuda().eval()
-# get the superslomo network.
+            img_0_np = img_0.permute(1, 2, 0).cpu().data.numpy()[..., ::-1] # H W C, 0-255 B G R
+            cv2.imwrite(self.img_dir+"/img_"+str(count).zfill(5)+".png", img_0_np.astype(np.uint8))
+            count += 1
 
-fpath = args.images
-            
-images_list = glob.glob(os.path.join(fpath, "*.png"))
-images_list.sort()
+            image_tensor = self.normalize_tensor(image_tensor)
 
-log.info("Input video clip has %s frames"%(len(images_list)/8))
+            for idx in range(1, 8):
+                t_interp = [float(idx)/8]*(self.n_frames-1)
+                t_interp = torch.Tensor(t_interp).float().cuda()
+                t_interp = t_interp.view(1, self.n_frames - 1, 1, 1, 1)
 
-img_0 = cv2.imread(images_list[0])
-h, w, c = img_0.shape
-vFlag = h > w  # horizontal video => h<=w vertical video => w< h
-info = (736, 1280), (1.0, 1.0)
+                est_img_t = self.model(image_tensor, dataset_info=None, t_interp=t_interp, compute_loss=False)
+                # B C H W tensor.
 
-log.info("Interpolation beginning. Original length: %s" % len(images_list))
-count = 0
-start_idx = 0
-window = 25
-overlap = 17
-end_idx = start_idx + window
-iteration = 0
+                est_img_t = self.denormalize_tensor(est_img_t[:, None, ...]) # B T C H W. maintain some backward compatibility.
+                est_img_t = est_img_t[0, 0, ...] # C H W
+                est_img_t = est_img_t.permute(1, 2, 0).cpu().data.numpy()[..., ::-1] # H W C, 0-255 BGR
 
-while end_idx <= len(images_list):
-    iteration +=1
-
-    current_images = images_list[start_idx:end_idx] #[I_0 - I_3]
-    current_images = current_images[0::8] #[I_0, I_1, I_2, I_3]
-
-    image_tensor = [get_image(impath, vFlag) for impath in current_images]
-    image_tensor = torch.stack(image_tensor, dim=1)
-
-    img_0 = image_tensor[:, 1, ...] #[I0, I1, I2, I3]
-    img_1 = image_tensor[:, 2, ...] #[I0, I1, I2, I3]
-
-    img_0_np = img_0 * 255.0
-    img_0_np = img_0_np.permute(0,2, 3, 1)[0, ...]
-    img_0_np = img_0_np.cpu().data.numpy()
-    cv2.imwrite(img_dir+"/img_"+str(count).zfill(5)+".png", img_0_np)
-    count += 1
-
-    for idx in range(1, 8):
-        t_interp = float(idx)/8
-        interpolation_result = superslomo(image_tensor, info, t_interp, split="VAL", iteration=iteration,
-                                          compute_loss=False)
-        est_image_t = interpolation_result * 255.0
-        est_image_t = est_image_t.permute(0,2, 3, 1)[0, ...]
-        est_image_t = est_image_t.cpu().data.numpy()
-        cv2.imwrite(img_dir+"/img_"+str(count).zfill(5)+".png", est_image_t)
+                log.info("Interpolated frame: %s"%(count))
+                cv2.imwrite(self.img_dir+"/img_"+str(count).zfill(5)+".png", est_img_t.astype(np.uint8))
+                count += 1
+                
+        img_1_np = img_1.permute(1, 2, 0).cpu().data.numpy()[..., ::-1] # H W C, 0 - 255 B G R
+        cv2.imwrite(self.img_dir+"/img_"+str(count).zfill(5)+".png", img_1_np.astype(np.uint8))
         count += 1
+    
+    def normalize_tensor(self, input_tensor):
+        pix_mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 1, -1, 1, 1).cuda() # B T C H W
+        pix_std = torch.tensor([0.229, 0.224, 0.225]).view(1, 1, -1, 1, 1).cuda()
 
-    start_idx = start_idx + window - overlap
-    end_idx = start_idx + window
+        input_tensor = (input_tensor/255.0 - pix_mean)/pix_std
 
-img_1_np = img_1 * 255.0
-img_1_np = img_1_np.permute(0,2, 3, 1)[0, ...]
-img_1_np = img_1_np.cpu().data.numpy()
-cv2.imwrite(img_dir+"/img_"+str(count).zfill(5)+".png", img_1_np)
-count += 1
+        return input_tensor
+        
 
-log.info("Interpolation complete.")
+    def denormalize_tensor(self, output_tensor):
+        pix_mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 1, -1, 1, 1).cuda() # B T C H W
+        pix_std = torch.tensor([0.229, 0.224, 0.225]).view(1, 1, -1, 1, 1).cuda()
+        output_tensor = ((output_tensor * pix_std) + pix_mean)* 255.0
+        return output_tensor
+    
+
+    def sliding_window(self, img_paths, fps240=True):
+        if fps240:
+            # do the sliding window business.
+            img_paths = img_paths[::8]
+            
+        interp_inputs = list(range(len(img_paths)))
+        interp_pairs = list(zip(interp_inputs[:-1], interp_inputs[1:]))
+        log.info("%s windows." %len(interp_pairs))
+        for interp_start, interp_end in interp_pairs:
+            left_start = interp_start - ((self.n_frames - 1)//2)
+            right_end = interp_end + ((self.n_frames - 1)//2)
+            input_locations = list(range(left_start, right_end+1))
+            for idx in range(len(input_locations)):
+                if input_locations[idx]<0:
+                    input_locations[idx]= 0
+                elif input_locations[idx]>=len(img_paths):
+                    input_locations[idx] = len(img_paths)-1 # final index.
+            log.info(input_locations)
+            sample = [img_paths[i] for i in input_locations]
+            yield sample
+
+if __name__ == "__main__":
+
+     args = getargs()
+
+     config = configparser.RawConfigParser()
+     logging.basicConfig(filename=args.log, level=logging.INFO)
+     config.read(args.config)
+
+     superslomo = Interpolator(config, args.expt)
+     superslomo.interpolate_frames(input_directory=args.directory, fps240=False, img_type='jpg')
+     log.info("Interpolation complete.")

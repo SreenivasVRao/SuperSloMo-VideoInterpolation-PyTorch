@@ -52,11 +52,6 @@ class Evaluator:
         log.info("Interpolating at: ")
         log.info(self.interp_locations)
 
-        self.pad_mode = self.cfg.get("EVAL", "PADDING")
-        assert self.pad_mode in ["NONE", "REPLICATE"]
-        self.interp_mode = self.cfg.get("EVAL", "INTERP_MODE")
-        assert self.interp_mode in ["ALL", "MID"]
-
         self.load_model()
 
     def load_model(self):
@@ -150,20 +145,20 @@ class Evaluator:
         targets = torch.stack(targets, dim=1)
         outputs = list(outputs.split(dim=0, split_size=1)) # B length list. T C H W
         targets = list(targets.split(dim=0, split_size=1))
-
+        
         assert len(outputs) == len(n_avail)
         new_outputs = []
         new_targets = []
         for idx, n in enumerate(n_avail):
             if n < self.interp_factor-1: # handles the edges of the original clip.
-                outputs[idx] = outputs[idx][:n, ...] # trim if less than 7 interpolations to be considered.
-                targets[idx] = targets[idx][:n, ...]
+                outputs[idx] = outputs[idx][:, :n, ...] # trim if less than 7 interpolations to be considered.
+                targets[idx] = targets[idx][:, :n, ...] # 1 T C H W tensor.
             new_outputs.append(outputs[idx])
             new_targets.append(targets[idx])
-
+            
         new_outputs = torch.cat(new_outputs, dim=1) # concat along t axis.
         new_targets = torch.cat(new_targets, dim=1) # concat along t axis.
-
+        
         new_outputs = new_outputs.view(-1, 3, self.H_REF, self.W_REF)
         new_targets = new_targets.view(-1, 3, self.H_REF, self.W_REF)
         
@@ -207,15 +202,12 @@ class Evaluator:
         output_batch = self.denormalize(output_batch)
         target_batch = self.denormalize(target_batch)
 
-        output_batch = output_batch.cpu().data.numpy()
-        target_batch = target_batch.cpu().data.numpy()        
+        output_batch = output_batch.cpu().data.numpy().astype(np.uint8)
+        target_batch = target_batch.cpu().data.numpy().astype(np.uint8)
 
         for idx in range(B):
             output_image = output_batch[idx, ...]  # * 255.0 # 1 H W C
             target_image = target_batch[idx, ...]  # * 255.0 # 1 H W C
-
-            output_image = output_image.astype(np.uint8)
-            target_image = target_image.astype(np.uint8)
 
             psnr_score, ssim_score, ie_score = self.eval_single_image(output_image, target_image)
 
@@ -232,7 +224,7 @@ class Evaluator:
         batch = batch * 255.0
         return batch
 
-    def get_t_interp(self, t_mid, sample_type):
+    def get_t_interp(self, t_mid, sample_type="B"):
 
         if sample_type == "A":
             raise Exception("Should not be called.")
@@ -286,7 +278,7 @@ class Evaluator:
                 continue
             
             self.eval_batch(aBatch, n_avail) # applies a sliding window evaluation.
-            if iteration % 5 == 0:
+            if iteration % 10 == 0:
                 log.info("Iteration: %s of %s" % (iteration, n_iterations))
                 log.info(aBatch.shape)
                 log.info("So far: PSNR: %.3f IE: %.3f SSIM: %.3f" % (np.mean(self.video_PSNR),
