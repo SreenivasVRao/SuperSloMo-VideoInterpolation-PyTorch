@@ -40,6 +40,8 @@ class Evaluator:
         self.video_SSIM = []
         self.val_samples, self.dataset = self.get_dataset()
 
+        assert self.dataset in ["SINTEL_HFR", "ADOBE", "SLOWFLOW"], "Invalid dataset."
+
         dims = self.get_dims()
 
         (self.H_REF, self.W_REF), (self.H_IN, self.W_IN), (self.H_START, self.W_START) = dims
@@ -143,7 +145,7 @@ class Evaluator:
 
         outputs = torch.stack(outputs, dim=1) # B 7 C H W
         targets = torch.stack(targets, dim=1)
-        outputs = list(outputs.split(dim=0, split_size=1)) # B length list. T C H W
+        outputs = list(outputs.split(dim=0, split_size=1)) # B length list. 1 T C H W
         targets = list(targets.split(dim=0, split_size=1))
         
         assert len(outputs) == len(n_avail)
@@ -151,15 +153,18 @@ class Evaluator:
         new_targets = []
         for idx, n in enumerate(n_avail):
             if n < self.interp_factor-1: # handles the edges of the original clip.
+                log.info("Found an end clip: %s"%n)
+                log.info(outputs[idx].shape)
+                log.info(outputs[idx][:, :n, ...].shape)
                 outputs[idx] = outputs[idx][:, :n, ...] # trim if less than 7 interpolations to be considered.
                 targets[idx] = targets[idx][:, :n, ...] # 1 T C H W tensor.
             new_outputs.append(outputs[idx])
             new_targets.append(targets[idx])
             
-        new_outputs = torch.cat(new_outputs, dim=1) # concat along t axis.
+        new_outputs = torch.cat(new_outputs, dim=1) # concat along t axis. 1 [T1+T2+T3] C H W
         new_targets = torch.cat(new_targets, dim=1) # concat along t axis.
         
-        new_outputs = new_outputs.view(-1, 3, self.H_REF, self.W_REF)
+        new_outputs = new_outputs.view(-1, 3, self.H_REF, self.W_REF) # [T1+T2+T3] C H W
         new_targets = new_targets.view(-1, 3, self.H_REF, self.W_REF)
         
         PSNR_score, IE_score, SSIM_score = self.get_scores(new_outputs, new_targets)
@@ -224,24 +229,11 @@ class Evaluator:
         batch = batch * 255.0
         return batch
 
-    def get_t_interp(self, t_mid, sample_type="B"):
+    def get_t_interp(self, t_mid):
 
-        if sample_type == "A":
-            raise Exception("Should not be called.")
-            # left = [np.random.randint(1, self.interp_factor) for _ in range((self.n_frames - 1) // 2)]
-            # right = [np.random.randint(1, self.interp_factor) for _ in range((self.n_frames - 1) // 2)]
-            # t_interp = left + [t_mid] + right
-        elif sample_type == "B":
-            t_interp = [t_mid] * (self.n_frames - 1)
-        else:
-            raise Exception("Expected sample type A or B.")
-
-        assert len(t_interp) == (self.n_frames - 1), "Incorrect number of interpolation points."
-
+        t_interp = [t_mid] * (self.n_frames - 1)
         raw_values = t_interp[:]
-
         t_interp = torch.Tensor(t_interp).view(1, (self.n_frames - 1), 1, 1, 1)  # B T C H W
-
         t_interp = t_interp.cuda().float()
         t_interp = t_interp / self.interp_factor
         assert (0 < t_interp).all() and (t_interp < 1).all(), "Incorrect values."
@@ -260,7 +252,7 @@ class Evaluator:
 
         for idx, t_idx in enumerate(self.interp_locations):
             img_t = data_batch[:, t_idx, ...]  # most intermediate frames.
-            t_interp, raw_values = self.get_t_interp(idx + 1, sample_type="B")  # 1 - 7 or 1 - 31 depending on dataset.
+            t_interp, raw_values = self.get_t_interp(idx + 1)  # 1 - 7 or 1 - 31 depending on dataset.
 
             t_interp = t_interp.expand(image_tensor.shape[0], self.n_frames - 1, 1, 1, 1)  # for multiple gpus.
 

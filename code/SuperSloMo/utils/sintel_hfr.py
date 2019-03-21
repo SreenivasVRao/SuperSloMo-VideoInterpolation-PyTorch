@@ -121,9 +121,10 @@ class Reader(Dataset):
             else:
                 assert interp_end < T
                 n_avail = self.interp_factor-1
-            # if idx < 2 or len(interp_windows)-2<= idx<=len(interp_windows)-1:
-            #     log.info("%s --- %s"%(interp_start, interp_end))
-            #     log.info(current_window[::8])
+            if idx < 2 or len(interp_windows)-2<= idx<=len(interp_windows)-1:
+                log.info("%s --- %s"%(interp_start, interp_end))
+                log.info(current_window[::32])
+                log.info("Interp: %s"%n_avail)
                 
             sample_paths = [img_paths[i] for i in current_window]
             assert len(sample_paths)==self.reqd_images
@@ -235,7 +236,7 @@ if __name__ == '__main__':
     import time
     total = 0
     samples = data_generator(config, "VAL")
-    for idx, batch in enumerate(samples):
-        data, n_avail = batch
-        log.info(data.shape)
-        break
+    # for idx, batch in enumerate(samples):
+    #     data, n_avail = batch
+    #     log.info(data.shape)
+    #     break
