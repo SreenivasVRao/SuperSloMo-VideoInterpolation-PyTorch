@@ -2,6 +2,7 @@ import configparser, cv2, os, glob, logging
 from argparse import ArgumentParser
 import torch, torch.nn as nn, torch.nn.functional as F
 from SuperSloMo.models import SSMR
+from SuperSloMo.utils import flo_utils
 import numpy as np
 
 log = logging.getLogger(__name__)
@@ -26,9 +27,10 @@ class Interpolator:
         self.cfg = config
         self.model = SSMR.full_model(self.cfg).cuda().eval()
         log_dir = os.path.join(config.get("PROJECT", "DIR"), "logs")
-        img_dir = os.path.join(log_dir, expt, "images")
+        img_dir = os.path.join('/mnt/nfs/scratch1/sreenivasv', expt, "images")
         os.makedirs(img_dir)
         self.img_dir = img_dir
+        self.expt = expt
         self.n_frames = self.cfg.getint("TRAIN", "N_FRAMES")
 
     def load_batch(self, sample):
@@ -51,6 +53,14 @@ class Interpolator:
         log.info("Looking for %s images in %s. 240 FPS: %s" %(img_type, input_directory, fps240))
         images_list = glob.glob(os.path.join(input_directory, "*."+img_type.lower()))
         images_list.sort()
+
+        os.makedirs(os.path.join('/mnt/nfs/scratch1/sreenivasv', self.expt, 'estimated_flow'))
+        os.makedirs(os.path.join('/mnt/nfs/scratch1/sreenivasv', self.expt, 'refined_flow'))
+        os.makedirs(os.path.join('/mnt/nfs/scratch1/sreenivasv', self.expt, 'visibility_map'))
+
+        est_flow_dir = os.path.join('/mnt/nfs/scratch1/sreenivasv', self.expt, 'estimated_flow')
+        refined_flow_dir = os.path.join('/mnt/nfs/scratch1/sreenivasv', self.expt, 'refined_flow')
+        visibility_dir = os.path.join('/mnt/nfs/scratch1/sreenivasv', self.expt, 'visibility_map')
         
         count = 0
         
@@ -73,16 +83,38 @@ class Interpolator:
                 t_interp = torch.Tensor(t_interp).float().cuda()
                 t_interp = t_interp.view(1, self.n_frames - 1, 1, 1, 1)
 
-                est_img_t = self.model(image_tensor, dataset_info=None, t_interp=t_interp, compute_loss=False)
-                # B C H W tensor.
 
+                # est_img_t = self.model(image_tensor, dataset_info=None, t_interp=t_interp, compute_loss=False)
+                # # B C H W tensor.
+
+                model_outputs = self.model(image_tensor, dataset_info=None, t_interp=t_interp, compute_loss=False)
+                est_img_t, flowC_01, flowC_10, est_flow_t1, est_flow_t0, refined_flow_t1, refined_flow_t0, v_0t = model_outputs
+                flowC_01 = flo_utils.computeImg(flowC_01[0, ...].permute(1, 2, 0).cpu().data.numpy())
+                flowC_10 = flo_utils.computeImg(flowC_10[0, ...].permute(1, 2, 0).cpu().data.numpy())
+
+                est_flow_t1 = flo_utils.computeImg(est_flow_t1[0, ...].permute(1, 2, 0).cpu().data.numpy())
+                est_flow_t0 = flo_utils.computeImg(est_flow_t0[0, ...].permute(1, 2, 0).cpu().data.numpy())
+
+                refined_flow_t1 = flo_utils.computeImg(refined_flow_t1[0, ...].permute(1, 2, 0).cpu().data.numpy())
+                refined_flow_t0 = flo_utils.computeImg(refined_flow_t0[0, ...].permute(1, 2, 0).cpu().data.numpy())
+                v_0t = v_0t[0, ...].cpu().permute(1, 2, 0).data.numpy() * 255.0
+                cv2.imwrite(refined_flow_dir+"/flow_t1_"+str(count).zfill(5)+".png", refined_flow_t1)
+                cv2.imwrite(refined_flow_dir+"/flow_t0_"+str(count).zfill(5)+".png", refined_flow_t0)
+                cv2.imwrite(visibility_dir+"/visibility_"+str(count).zfill(5)+".png", v_0t.astype(np.uint8))
+               
                 est_img_t = self.denormalize_tensor(est_img_t[:, None, ...]) # B T C H W. maintain some backward compatibility.
                 est_img_t = est_img_t[0, 0, ...] # C H W
                 est_img_t = est_img_t.permute(1, 2, 0).cpu().data.numpy()[..., ::-1] # H W C, 0-255 BGR
 
                 log.info("Interpolated frame: %s"%(count))
-                cv2.imwrite(self.img_dir+"/img_"+str(count).zfill(5)+".png", est_img_t.astype(np.uint8))
+                cv2.imwrite(self.img_dir+"/interp_img_"+str(count).zfill(5)+".png", est_img_t.astype(np.uint8))
                 count += 1
+
+        # flow_01, flow_10
+        log.info(est_flow_dir+"/Flow_01_"+str(count).zfill(5)+".png")
+        log.info(flowC_01.shape)
+        cv2.imwrite(est_flow_dir+"/Flow_01_"+str(count).zfill(5)+".png", flowC_01)
+        cv2.imwrite(est_flow_dir+"/Flow_10_"+str(count).zfill(5)+".png", flowC_10)
                 
         img_1_np = img_1.permute(1, 2, 0).cpu().data.numpy()[..., ::-1] # H W C, 0 - 255 B G R
         cv2.imwrite(self.img_dir+"/img_"+str(count).zfill(5)+".png", img_1_np.astype(np.uint8))
@@ -112,6 +144,9 @@ class Interpolator:
         interp_inputs = list(range(len(img_paths)))
         interp_pairs = list(zip(interp_inputs[:-1], interp_inputs[1:]))
         log.info("%s windows." %len(interp_pairs))
+        interp_pairs = [interp_pairs[1]]
+        log.info("%s windows." %len(interp_pairs))
+        
         for interp_start, interp_end in interp_pairs:
             left_start = interp_start - ((self.n_frames - 1)//2)
             right_end = interp_end + ((self.n_frames - 1)//2)

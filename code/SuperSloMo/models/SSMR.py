@@ -186,7 +186,42 @@ class FullModel(nn.Module):
         else:
             if iteration==1:
                 log.info("Returning middle result: %s"%mid_idx)
-            return est_img_t # middle result.
+
+            _, mid_flowC = flowC_outputs[mid_idx]
+            # log.info("Flow C: ")
+            # log.info(mid_flowC.shape)
+
+            flowC_01 = mid_flowC[:, [0, 1],:,:] # flow from 0 to 1.
+            flowC_10 = mid_flowC[:, [2, 3],:,:] # flow from 1 to 0.
+                        
+            # log.info("Flow 01, 10: ")
+            # log.info(flowC_01.shape)
+            # log.info(flowC_10.shape)
+
+            flowI_in = stage2_inputs[:, mid_idx, ...]
+            # log.info("FlowI_in")
+            # log.info(flowI_in.shape)
+
+            est_flow_t1  = flowI_in[:, [6,7], ...]
+            est_flow_t0  = flowI_in[:, [8,9], ...]
+            
+            flowI_out = flowI_outputs[t]
+            # log.info("FlowI_out")
+            # log.info(flowI_out.shape)
+            v_1t = flowI_out[:, 0, ...] # Visibility Map 1-> t
+            dflow_t1 = flowI_out[:, 1:3, ...] # Residual of flow t->1
+            dflow_t0 = flowI_out[:, 3:5, ...] # Residual of flow t->0
+
+            v_1t = v_1t[:, None, ...] # making dimensions compatible
+
+            v_1t = torch.sigmoid(v_1t)
+
+            v_0t = 1 - v_1t # Visibility Map 0->t
+
+            refined_flow_t1 = est_flow_t1 + dflow_t1
+            refined_flow_t0 = est_flow_t0 + dflow_t0
+            
+            return est_img_t, flowC_01, flowC_10, est_flow_t1, est_flow_t0, refined_flow_t1, refined_flow_t0,  v_0t, # middle result.
 
 
 def full_model(config, writer=None):
