@@ -256,7 +256,7 @@ class Evaluator:
 
             t_interp = t_interp.expand(image_tensor.shape[0], self.n_frames - 1, 1, 1, 1)  # for multiple gpus.
 
-            est_img_t = self.model(image_tensor, info, t_interp, iteration=None, compute_loss=False)
+            est_img_t = self.model(image_tensor, info, t_interp, iteration=None, compute_loss=False)[0]
             interpolation_results.append(est_img_t) # B C H W
             ground_truths.append(img_t)
 
@@ -266,8 +266,8 @@ class Evaluator:
         iteration = 0
         n_iterations = len(self.val_samples)
         for aBatch, n_avail in self.val_samples:
-            if aBatch.shape[0] < torch.cuda.device_count():
-                continue
+            # if aBatch.shape[0] < torch.cuda.device_count():
+            #     continue
             
             self.eval_batch(aBatch, n_avail) # applies a sliding window evaluation.
             if iteration % 10 == 0:
