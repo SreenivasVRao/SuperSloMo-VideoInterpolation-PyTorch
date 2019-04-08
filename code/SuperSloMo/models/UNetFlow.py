@@ -15,7 +15,7 @@ class FlowComputationModel(nn.Module):
         super(FlowComputationModel, self).__init__()
         self.verbose = verbose
         self.cfg = cfg
-        self.bottleneck_type = self.cfg.get("MODEL", "BOTTLENECK")
+        self.bottleneck_type = self.cfg.get("STAGE1", "BOTTLENECK")
         self.cross_skip_connect = cross_skip
         log.info("Stage 1 model.")
         log.info("Encoder: UNET.  Bottleneck: %s."%self.bottleneck_type)
@@ -178,10 +178,11 @@ class FlowComputationModel(nn.Module):
             x_rev = torch.stack(tensor_list[::-1], dim=1)
             output = self.conv6(x_fwd, x_rev)
         elif self.bottleneck_type == "CONV":
-            assert len(tensor_list) == 1, "Wrong number of timesteps."
-            x_fwd = tensor_list[0]
-            output = self.conv6(x_fwd)
-            output = output[:, None, ...] # B C H W -> B 1 C H W
+            output = []
+            for x_fwd in tensor_list:
+                out = self.conv6(x_fwd)
+                output.append(out)
+            output = torch.stack(output, dim=1) # B C H W -> B 1 C H W
         return output
 
     def decoder(self, input_tensor, encoder_outputs):
@@ -298,7 +299,7 @@ class FlowInterpolationModel(nn.Module):
         self.cross_skip_connect = cross_skip
         # skip connection from stage1 to stage2
         self.cfg = cfg
-        self.bottleneck_type = self.cfg.get("MODEL", "BOTTLENECK")
+        self.bottleneck_type = self.cfg.get("STAGE2", "BOTTLENECK")
         self.cross_skip_connect = cross_skip
         log.info("Stage 2 model.")
         log.info("Encoder: UNET.  Bottleneck: %s."%self.bottleneck_type)
@@ -537,10 +538,12 @@ class FlowInterpolationModel(nn.Module):
             x_rev = torch.stack(tensor_list[::-1], dim=1)
             output = self.conv6(x_fwd, x_rev)
         elif self.bottleneck_type == "CONV":
-            assert len(tensor_list) == 1, "Wrong number of timesteps."
-            x_fwd = tensor_list[0]
-            output = self.conv6(x_fwd)
-            output = output[:, None, ...] # B C H W -> B 1 C H W
+            output = []
+            for x_fwd in tensor_list:
+                out = self.conv6(x_fwd)
+                output.append(out)
+            output = torch.stack(output, dim=1) # B C H W -> B 1 C H W
+            
         return output
 
     def forward(self, unet_in, stage1_encoder_output=None):

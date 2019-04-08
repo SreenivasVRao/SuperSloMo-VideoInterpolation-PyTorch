@@ -1,5 +1,6 @@
 from SuperSloMo.models import SSMR
-from SuperSloMo.utils import adobe_240fps, NFS, Vimeo90K_v2, vimeo_adobe
+# from SuperSloMo.utils import adobe_240fps, NFS, Vimeo90K_v2, vimeo_adobe
+from SuperSloMo.utils import adobe_240fps
 import numpy as np,  random
 import torch.optim
 import torch
@@ -128,7 +129,7 @@ class SSMNet:
         losses = losses.mean(dim=0) # averages the loss over the batch. Horrific code. [B, 4] -> [4]
         self.write_losses(losses, iteration, split)
 
-        if iteration%500==0:
+        if iteration%100==0:
             pred_img = est_img_t[0, ...]
             pix_mean = self.cfg.get('MODEL', 'PIXEL_MEAN').split(',')
             pix_mean = [float(p) for p in pix_mean]
