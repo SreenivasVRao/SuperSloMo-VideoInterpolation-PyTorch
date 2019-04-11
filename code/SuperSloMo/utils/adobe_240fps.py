@@ -1,5 +1,3 @@
-import sys
-sys.path.insert(0, "/home/sreenivasv/CS701/SuperSloMo-PyTorch/code/SuperSloMo/utils/")
 import numpy as np
 import logging
 import cv2
@@ -7,7 +5,7 @@ from math import ceil
 import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
-from common import (AugmentData, EvalPad, Normalize, ToTensor, RandomCrop)
+from .common import (AugmentData, EvalPad, Normalize, ToTensor, RandomCrop)
 
 
 cv2.setNumThreads(0)

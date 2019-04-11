@@ -1,12 +1,10 @@
-import sys
-sys.path.insert(0, "/home/sreenivasv/CS701/SuperSloMo-PyTorch/code/SuperSloMo/models/")
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
 import torch
 import logging
 import numpy as np
-from layers import warp
+from .layers import warp
 
 log = logging.getLogger(__name__)
 

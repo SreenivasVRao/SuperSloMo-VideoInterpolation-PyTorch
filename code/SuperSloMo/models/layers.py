@@ -1,10 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import sys
-sys.path.insert(0, "/home/sreenivasv/CS701/SuperSloMo-PyTorch/code/SuperSloMo/models/")
-from CLSTM.convlstm import *
-from CLSTM.convgru import *
+from .CLSTM.convlstm import *
+from .CLSTM.convgru import *
 
 
 def make_norm_layer(norm_type, out_planes, is_2d=True, gn_planes=32):

@@ -1,6 +1,4 @@
-import sys
-sys.path.insert(0, "/home/sreenivasv/CS701/SuperSloMo-PyTorch/code/SuperSloMo/models/")
-from layers import *
+from .layers import *
 import torch.nn as nn
 import torch.nn.functional as F
 import torch

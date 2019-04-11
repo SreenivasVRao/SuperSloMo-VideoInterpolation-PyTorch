@@ -1,14 +1,12 @@
 """
 SuperSloMo-R (R= Recurrent model)
 """
-import sys
-sys.path.insert(0, "/home/sreenivasv/CS701/SuperSloMo-PyTorch/code/SuperSloMo/models/")
-from SSMLoss import get_loss as get_ssm_loss
+from .SSMLoss import get_loss as get_ssm_loss
 import torch
 import torch.nn as nn
 import logging
-import ResNetFlow2 as resnet
-import UNetFlow as unet
+from . import ResNetFlow2 as resnet
+from . import UNetFlow as unet
 
 log = logging.getLogger(__name__)
 

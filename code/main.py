@@ -59,7 +59,7 @@ class SSMNet:
         log_dir = os.path.join(self.cfg.get("PROJECT","DIR"), "logs")
 
         os.makedirs(os.path.join(log_dir, self.expt_name, "plots"))
-        os.makedirs(os.path.join("/mnt/nfs/scratch1/sreenivasv/checkpoints", self.expt_name))
+        os.makedirs(os.path.join("/mnt/nfs/scratch1/sreenivasv/TDAVI_checkpoints", self.expt_name))
 
         self.writer = SummaryWriter(os.path.join(log_dir, self.expt_name, "plots"))
         self.get_hyperparams()
@@ -201,7 +201,7 @@ class SSMNet:
                 }
                 
  
-                fpath = os.path.join("/mnt/nfs/scratch1/sreenivasv/checkpoints", self.expt_name,
+                fpath = os.path.join("/mnt/nfs/scratch1/sreenivasv/TDAVI_checkpoints", self.expt_name,
                                      self.expt_name+"_EPOCH_"+str(epoch).zfill(4)+".pt")
 
                 torch.save(state, fpath)
