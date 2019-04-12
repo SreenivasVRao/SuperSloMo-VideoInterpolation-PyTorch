@@ -8,12 +8,9 @@ import logging
 import torch
 import configparser, cv2, os, glob
 from argparse import ArgumentParser
-import adobe_eval, slowflow, sintel_hfr
+from SuperSloMo.utils import adobe_eval, slowflow, sintel_hfr
 import torch.nn.functional as F
-import sys
-
-sys.path.insert(0, "/home/sreenivasv/CS701/SuperSloMo-PyTorch/code/SuperSloMo/models/")
-import SSMR
+from SuperSloMo.models import SSMR
 
 log = logging.getLogger(__name__)
 
@@ -266,8 +263,8 @@ class Evaluator:
         iteration = 0
         n_iterations = len(self.val_samples)
         for aBatch, n_avail in self.val_samples:
-            # if aBatch.shape[0] < torch.cuda.device_count():
-            #     continue
+            if aBatch.shape[0] < torch.cuda.device_count():
+                continue
             
             self.eval_batch(aBatch, n_avail) # applies a sliding window evaluation.
             if iteration % 10 == 0:
