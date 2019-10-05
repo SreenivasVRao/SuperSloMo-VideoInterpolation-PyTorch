@@ -68,6 +68,7 @@ class FlowComputationModel(nn.Module):
             self.conv6 = ConvBLSTM(in_channels=512, hidden_channels=512,
                                     kernel_size=(3, 3), num_layers=2, batch_first=True)
         elif self.bottleneck_type == "CGRU":
+            raise Exception("Not Implemented yet.")
             self.conv6 = ConvBGRU(in_channels=512, hidden_channels=512,
                                    kernel_size=(3, 3), num_layers=2, batch_first=True)
 
@@ -171,16 +172,19 @@ class FlowComputationModel(nn.Module):
         return conv1b_out, conv2b_out, conv3b_out, conv4b_out, conv5b_out, pool6_out
 
     def bottleneck(self, tensor_list):
+
         if self.bottleneck_type in ["CLSTM", "CGRU"]:
             x_fwd = torch.stack(tensor_list, dim=1)
             x_rev = torch.stack(tensor_list[::-1], dim=1)
             output = self.conv6(x_fwd, x_rev)
+
         elif self.bottleneck_type == "CONV":
             output = []
             for x_fwd in tensor_list:
                 out = self.conv6(x_fwd)
                 output.append(out)
             output = torch.stack(output, dim=1) # B C H W -> B 1 C H W
+
         return output
 
     def decoder(self, input_tensor, encoder_outputs):
@@ -293,7 +297,7 @@ class FlowInterpolationModel(nn.Module):
 
     def __init__(self, in_channels, out_channels, cross_skip, verbose=False, cfg= None):
         super(FlowInterpolationModel, self).__init__()
-        self.verbose = verbose 
+        self.verbose = verbose
         self.cross_skip_connect = cross_skip
         # skip connection from stage1 to stage2
         self.cfg = cfg
@@ -351,6 +355,7 @@ class FlowInterpolationModel(nn.Module):
             self.conv6 = ConvBLSTM(in_channels=512, hidden_channels=512,
                                     kernel_size=(3, 3), num_layers=2, batch_first=True)
         elif self.bottleneck_type == "CGRU":
+            raise Exception("Not Implemented yet.")
             self.conv6 = ConvBGRU(in_channels=512, hidden_channels=512,
                                    kernel_size=(3, 3), num_layers=2, batch_first=True)
 
@@ -531,6 +536,7 @@ class FlowInterpolationModel(nn.Module):
         return final_out
 
     def bottleneck(self, tensor_list):
+
         if self.bottleneck_type in ["CLSTM", "CGRU"]:
             x_fwd = torch.stack(tensor_list, dim=1)
             x_rev = torch.stack(tensor_list[::-1], dim=1)
@@ -541,7 +547,6 @@ class FlowInterpolationModel(nn.Module):
                 out = self.conv6(x_fwd)
                 output.append(out)
             output = torch.stack(output, dim=1) # B C H W -> B 1 C H W
-            
         return output
 
     def forward(self, unet_in, stage1_encoder_output=None):
@@ -633,7 +638,7 @@ class FlowInterpolationModel(nn.Module):
         dflow_t0 = output_tensor[:, 3:5, ...] # Residual of flow t->0
 
         v_1t = v_1t[:, None, ...] # making dimensions compatible
-        
+
         v_1t = torch.sigmoid(v_1t)
 
         v_0t = 1 - v_1t # Visibility Map 0->t

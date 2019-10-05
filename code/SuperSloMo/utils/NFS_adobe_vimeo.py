@@ -1,4 +1,5 @@
 import sys
+import os
 import numpy as np
 import logging
 import cv2
@@ -12,9 +13,151 @@ cv2.setNumThreads(0)
 log = logging.getLogger(__name__)
 
 
+class NFSReader(Dataset):
+
+    def __init__(self, cfg, split="TRAIN", eval_mode=False, transform=None,
+                 t_sample="FIXED"):
+        """
+        :param cfg: Config file.
+        :param split: TRAIN/VAL/TEST
+        """
+
+        self.cfg = cfg
+        self.clips = self.read_clip_list(split)
+        self.split = split
+        REQD_IMAGES = {2: 9, 4: 25, 6: 41, 8: 57}
+        self.reqd_images = REQD_IMAGES[self.cfg.getint("TRAIN", "N_FRAMES")]
+        self.eval_mode = eval_mode
+        self.custom_transform = transform
+        self.t_sample = t_sample
+        self.n_frames = self.cfg.getint("TRAIN", "N_FRAMES")
+        log.info("Launching NFS reader with T_SAMPLE: %s N_FRAMES: %s"\
+                 %(self.t_sample, self.n_frames))
+
+    def get_start_end(self, img_paths):
+        """
+        gets start-end indexes for each N_FRAMES setting such that the
+        most intermediate frames of the full sample are at the center.
+        """
+        assert len(img_paths) == 57, "Expected 8 frames per sample."
+        n_frames = self.cfg.getint("TRAIN", "N_FRAMES")
+
+        if self.eval_mode:
+            return (0, 57)
+        else:
+            if len(img_paths) > self.reqd_images:
+                start_idx = np.random.randint(0, len(img_paths) - \
+                                              self.reqd_images + 1)
+                end_idx = start_idx + self.reqd_images
+                return (start_idx, end_idx)
+            else:
+                return (0, 57)
+
+    def read_clip_list(self, split):
+        """
+        :param split: TRAIN/VAL/TEST
+        :return: list of all clips in split
+        """
+
+        fpath = self.cfg.get("NFS_DATA", split + "PATHS")
+        with open(fpath, "r") as f:
+            data = f.readlines()
+            data = [d.strip() for d in data]
+
+        clips = []
+
+        for idx, d in enumerate(data):
+            if len(d) <= 2:
+                nframes = int(d)
+                img_paths = data[idx + 1: idx + 1 + nframes]
+                clips.append(img_paths)
+            else:
+                continue
+        return clips
+
+    def get_reqd_idx(self):
+        t_sample = self.t_sample
+        n_frames = self.n_frames
+        if t_sample == "NIL":
+            raise NotImplementedError
+
+        elif t_sample == "FIXED":
+            # get I_0, I_0.5, I_1, I_1.5, I_2, ... I_n.
+            interp_idx = [4] * (n_frames - 1)
+
+            if n_frames == 2:
+                input_idx = [0, 8]
+                sample_idx = [4]
+            elif n_frames == 4:
+                input_idx = [0, 8, 16, 24]
+                sample_idx = [4, 12, 20]
+            elif n_frames == 6:
+                input_idx = [0, 8, 16, 24, 32, 40]
+                sample_idx = [4, 12, 20, 28, 36]
+            elif n_frames == 8:
+                input_idx = [0, 8, 16, 24, 32, 40, 48, 56]
+                sample_idx = [4, 12, 20, 28, 36, 44, 52]
+            else:
+                raise Exception("Wrong n_frames")
+
+            t_index = sorted(input_idx + sample_idx)
+            assert len(t_index) == (2 * n_frames - 1), "Incorrect number of frames."
+
+        elif t_sample == "RANDOM":
+
+            interp_idx = [np.random.randint(1, 8)] * (n_frames - 1)
+            # used to calculate t_interp.
+            sample_idx = [t + i * 8 for i, t in enumerate(interp_idx)]
+            # add frame offset.
+
+            if n_frames == 2:
+                input_idx = [0, 8]
+            elif n_frames == 4:
+                input_idx = [0, 8, 16, 24]
+            elif n_frames == 6:
+                input_idx = [0, 8, 16, 24, 32, 40]
+            elif n_frames == 8:
+                input_idx = [0, 8, 16, 24, 32, 40, 48, 56]
+            else:
+                raise Exception("Unsupported n_frames %s" % n_frames)
+
+            t_index = sorted(input_idx + sample_idx)
+            assert len(t_index) == (2 * n_frames - 1), "Incorrect number of frames."
+
+        else:
+            raise Exception("Invalid sampling argument.")
+
+        return t_index, interp_idx
+
+    def __len__(self):
+        return len(self.clips)
+
+    def __getitem__(self, idx):
+        """
+
+        :param idx: index of sample clip in dataset
+        :return: Gets the required sample, and ensures only 9 frames from the clip are returned.
+        """
+        img_paths = self.clips[idx]
+        start, end = self.get_start_end(img_paths)
+        img_paths = img_paths[start:end]
+        assert len(img_paths) == self.reqd_images, "Incorrect length of input sequence."
+        if self.split == "TRAIN" and np.random.randint(0, 2) == 1:
+            img_paths = img_paths[::-1]
+        reqd_idx, interp_idx = self.get_reqd_idx()  # handles the sampling.
+
+        sample = read_sample(img_paths, reqd_idx)
+        sample = self.custom_transform(sample)
+
+        assert interp_idx is not None
+        interp_idx = torch.Tensor(interp_idx).view(-1, 1, 1, 1)  # T C H W
+        return sample, interp_idx
+
+
 class VimeoReader:
 
-    def __init__(self, cfg, split="TRAIN", eval_mode=False, transform=None, t_sample="FIXED"):
+    def __init__(self, cfg, split="TRAIN", eval_mode=False, transform=None,
+                 t_sample="FIXED"):
         """
         :param cfg: Config file.
         :param split: TRAIN/VAL/TEST
@@ -28,13 +171,15 @@ class VimeoReader:
         REQD_IMAGES = {2: 3, 4: 7}
         self.reqd_images = REQD_IMAGES[self.n_frames]
         self.eval_mode = eval_mode
-        log.info("Launching Vimeo reader with T_SAMPLE: %s N_FRAMES: %s"%(self.t_sample, self.n_frames))
+        log.info("Launching Vimeo reader with T_SAMPLE: %s N_FRAMES: %s"\
+                 %(self.t_sample, self.n_frames))
         
         self.custom_transform = transform
 
     def get_start_end(self, img_paths):
         """
-        gets start-end indexes for each N_FRAMES setting such that the most intermediate frames of the full sample are at the center.
+        gets start-end indexes for each N_FRAMES setting such that the most
+        intermediate frames of the full sample are at the center.
         """
         assert len(img_paths) == 7, "Expected 7 frames per sample."
         n_frames = self.cfg.getint("TRAIN", "N_FRAMES")
@@ -62,7 +207,8 @@ class VimeoReader:
 
         for idx, sequence in enumerate(data):
             sequence_dir = os.path.join(SRC_DIR, "sequences", sequence)
-            image_paths = [sequence_dir + "/im" + str(i) + ".png" for i in range(1, 8)]
+            image_paths = [sequence_dir + "/im" + str(i) + ".png" \
+                           for i in range(1, 8)]
             image_paths = sorted(image_paths)
             assert len(image_paths) == 7
             clips.append(image_paths)
@@ -157,16 +303,6 @@ class AdobeReader(Dataset):
 
         if self.eval_mode:
             return (0, 57)
-            # if n_frames==2:
-            #     return (24, 33)
-            # elif n_frames==4:
-            #     return (16, 41)
-            # elif n_frames==6:
-            #     return (8, 49)
-            # elif n_frames==8:
-            #     return (0, 57)
-            # else:
-            #     raise Exception("Incorrect number of input frames.")
         else:
             if len(img_paths) > self.reqd_images:
                 start_idx = np.random.randint(0, len(img_paths) - self.reqd_images + 1)
@@ -288,31 +424,39 @@ class CombinedReader(Dataset):
 
         self.cfg = cfg
         t_sample = self.cfg.get("MISC", "T_SAMPLE")
-        self.adobe_reader = AdobeReader(cfg, split, eval_mode, transform, t_sample)
-        self.vimeo_reader = VimeoReader(cfg, split, eval_mode, transform, t_sample="FIXED")
+        self.adobe_reader = AdobeReader(cfg, split, eval_mode, transform,
+                                        t_sample)
+        self.nfs_reader = NFSReader(cfg, split, eval_mode, transform, t_sample)
+        self.vimeo_reader = VimeoReader(cfg, split, eval_mode, transform,
+                                        "FIXED")
 
         n_adobe = len(self.adobe_reader.clips)
+        n_nfs = len(self.nfs_reader.clips)
         n_vimeo = len(self.vimeo_reader.clips)
 
-        log.info("Adobe: %s clips. Vimeo: %s clips. " %(n_adobe, n_vimeo))
+        log.info("Adobe: %s clips. NFS: %s clips. Vimeo: %s clips. "\
+                 %(n_adobe, n_nfs, n_vimeo))
 
-        self.clips = self.generate_combined_clips(n_adobe, n_vimeo)
-        assert len(self.clips) == n_vimeo + n_adobe
-        log.info("Using the combined Adobe and Vimeo Readers.")
+        self.clips = self.generate_combined_clips(n_adobe, n_nfs, n_vimeo)
+        assert len(self.clips) == n_nfs + n_adobe + n_vimeo
+        log.info("Using the combined Adobe, Vimeo and NFS Readers.")
         log.info("Total length: %s"%len(self.clips))
 
-    def generate_combined_clips(self, n_adobe, n_vimeo):
+    def generate_combined_clips(self, n_adobe, n_nfs, n_vimeo):
 
         adobe_list = [("adobe", i) for i in range(n_adobe)]
+        nfs_list = [("nfs", i) for i in range(n_nfs)]
         vimeo_list = [("vimeo", i) for i in range(n_vimeo)]
 
-        combined_list = vimeo_list + adobe_list
+        combined_list = nfs_list + adobe_list + vimeo_list
         return combined_list
 
     def __getitem__(self, idx):
         sample_dataset, sample_idx = self.clips[idx]
         if sample_dataset == "adobe":
             return self.adobe_reader[sample_idx]
+        elif sample_dataset == "nfs":
+            return self.nfs_reader[sample_idx]
         elif sample_dataset == "vimeo":
             return self.vimeo_reader[sample_idx]
 

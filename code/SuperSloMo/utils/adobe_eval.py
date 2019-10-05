@@ -1,12 +1,10 @@
-import sys
-sys.path.insert(0, "/home/sreenivasv/CS701/SuperSloMo-PyTorch/code/SuperSloMo/utils/")
 import numpy as np
 import logging
 import cv2, glob, os
 import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
-from common import (ResizeCrop, EvalPad, Normalize, ToTensor)
+from .common import (ResizeCrop, EvalPad, Normalize, ToTensor)
 import pickle
 
 cv2.setNumThreads(0)
@@ -234,7 +232,6 @@ if __name__ == '__main__':
     logging.basicConfig(filename=args.log, level=logging.INFO)
 
     config = configparser.RawConfigParser()
-    config.read("/home/sreenivasv/CS701/SuperSloMo-PyTorch/code/configs/ssmr.ini")
     # config.read(args.config)
     logging.info("Read config")
 
