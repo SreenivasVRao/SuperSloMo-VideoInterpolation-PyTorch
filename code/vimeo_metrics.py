@@ -7,8 +7,10 @@ from SuperSloMo.utils.vimeo_eval import *
 from skimage.measure import compare_psnr, compare_ssim
 
 def denormalize(batch):
-    pix_mean = torch.tensor([0.485, 0.456, 0.406]).view(1, -1, 1, 1).cuda().float()
-    pix_std = torch.tensor([0.229, 0.224, 0.225]).view(1, -1, 1, 1).cuda().float()
+    pix_mean = torch.tensor([0.485, 0.456, 0.406]).view(1, -1, 1, 1).cuda()\
+                                                                    .float()
+    pix_std = torch.tensor([0.229, 0.224, 0.225]).view(1, -1, 1, 1).cuda()\
+                                                                   .float()
     batch = batch * pix_std + pix_mean
     batch = batch * 255.0
     return batch
@@ -55,14 +57,18 @@ t_interp = t_interp.view(1, -1, 1, 1, 1)
 
 for idx, (input_tensor, seq, pos) in enumerate(vimeo_samples):
     if n_frames == 4:
-        image_tensor = input_tensor[:, [0, 1, 3, 4], ...].cuda().float() # B 5 C H W -> B 4 C H W
+        image_tensor = input_tensor[:, [0, 1, 3, 4], ...].cuda().float()
+        # B 5 C H W -> B 4 C H W
         target_tensor = input_tensor[:, 2, ...].cuda().float()
     elif n_frames == 2:
-        image_tensor = input_tensor[:, [0, 2], ...].cuda().float() # B 3 C H W -> B 2 C H W
+        image_tensor = input_tensor[:, [0, 2], ...].cuda().float()
+        # B 3 C H W -> B 2 C H W
         target_tensor = input_tensor[:, 1, ...].cuda().float()
 
-    t_interp = t_interp.expand(image_tensor.shape[0], n_frames-1, 1, 1, 1)  # for multiple gpus.
-    est_img_t = superslomo(image_tensor, None, t_interp, iteration=None, compute_loss=False)
+    t_interp = t_interp.expand(image_tensor.shape[0], n_frames-1, 1, 1, 1)
+    # for multiple gpus.
+    est_img_t = superslomo(image_tensor, None, t_interp, iteration=None,
+                           compute_loss=False)[0]
 
     est_img_t = denormalize(est_img_t)
     target_tensor = denormalize(target_tensor)
@@ -77,17 +83,16 @@ for idx, (input_tensor, seq, pos) in enumerate(vimeo_samples):
         mean_avg_psnr = np.mean(PSNR_scores)
         mean_avg_IE = np.mean(IE_scores)
         mean_avg_SSIM = np.mean(SSIM_scores)
-        logging.info("So far: PSNR: %.3f IE: %.3f SSIM: %.3f" % (mean_avg_psnr, mean_avg_IE, mean_avg_SSIM))
-        #     if idx>200:
-        #         break
-        # data.sort(key=lambda tup: tup[0], reverse=True)
-
-# print(data[0:100])
+        logging.info("So far: PSNR: %.3f IE: %.3f SSIM: %.3f" % (mean_avg_psnr,
+                                                                 mean_avg_IE,
+                                                                 mean_avg_SSIM))
 
 mean_avg_psnr = np.mean(PSNR_scores)
 mean_avg_IE = np.mean(IE_scores)
 mean_avg_SSIM = np.mean(SSIM_scores)
-logging.info("Avg. per video. PSNR: %.3f IE: %.3f SSIM: %.3f" % (mean_avg_psnr, mean_avg_IE, mean_avg_SSIM))
+logging.info("Avg. per video. PSNR: %.3f IE: %.3f SSIM: %.3f" % (mean_avg_psnr,
+                                                                 mean_avg_IE,
+                                                                 mean_avg_SSIM))
 
 
 
