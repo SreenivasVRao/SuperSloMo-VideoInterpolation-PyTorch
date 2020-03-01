@@ -1,0 +1,62 @@
+#+TITLE: Notes
+
+* Note
+In all the experiments below, the numbers reported from [Jiang et. al.] are based on a model trained on 1014 youtube videos in addition to the Adobe240FPS dataset.
+Since these curated videos are not publicly available, my models were trained using the following publicly available data sources:
+
+1. NFS dataset - http://ci2cv.net/nfs/index.html - this data is 240 FPS
+2. Vimeo dataset - http://toflow.csail.mit.edu/ - this data is only 30 FPS
+3. Adobe dataset - https://www.cs.ubc.ca/labs/imager/tr/2017/DeepVideoDeblurring/
+
+
+** Evaluation on Adobe240FPS dataset
+
+|------------------------------------+----------+---------+---------|
+| Source                             |    PSNR↑ |     IE↓ |   SSIM↑ |
+|------------------------------------+----------+---------+---------|
+| SuperSloMo [Jiang et. al]          |    31.19 |    8.30 |   0.918 |
+| SuperSloMo [this implementation]   |   32.039 |   7.257 |   0.927 |
+| SuperSloMo-R [this implementation] | *34.124* | *5.896* | *0.951* |
+|------------------------------------+----------+---------+---------|
+
+** Evaluation on Slowflow dataset
+
+|--------------------------------------+----------+---------+---------|
+| Source                               |    PSNR↑ |     IE↓ |   SSIM↑ |
+|--------------------------------------+----------+---------+---------|
+| SuperSloMo [Jiang et. al]            |    34.19 |    6.14 |   0.924 |
+| SuperSloMo [this implementation]     |   36.311 |   4.322 |   0.938 |
+| SuperSloMo-R [this implementation]   | *37.988* | *3.568* | *0.955* |
+|--------------------------------------+----------+---------+---------|
+
+
+** Evaluation on Vimeo dataset
+
+|------------------------------------+----------+---------+---------|
+| Source                             | PSNR↑    | IE↓     | SSIM↑   |
+|------------------------------------+----------+---------+---------|
+| SuperSloMo [this implementation]   | 34.736   | 4.813   | 0.951   |
+| SuperSloMo-R [this implementation] | *35.554* | *4.488* | *0.956* |
+|------------------------------------+----------+---------+---------|
+
+** Evaluation on Sintel high frame rate dataset
+
+|------------------------------------+----------+---------+---------|
+| Source                             |    PSNR↑ |     IE↓ |   SSIM↑ |
+|------------------------------------+----------+---------+---------|
+| SuperSloMo [Jiang et. al]          |    32.38 |    5.42 |   0.927 |
+| SuperSloMo [this implementation]   |   31.799 |   5.859 |   0.921 |
+| SuperSloMo-R [this implementation] | *32.714* | *5.241* | *0.932* |
+|------------------------------------+----------+---------+---------|
+
+** Evaluation on Sintel optical flow benchmark (training set + _final_ pass)
+
+|------------------------------------+--------|
+| Source                             |   EPE↓ |
+|------------------------------------+--------|
+| DSTFlow                            |   7.82 |
+| Unflow-CSS                         |   7.91 |
+| MFO2                               | *6.01* |
+| SuperSloMo [this implementation]   |   7.36 |
+| SuperSloMo-R [this implementation] |   6.97 |
+|------------------------------------+--------|
