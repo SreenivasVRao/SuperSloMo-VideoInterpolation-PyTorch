@@ -1,0 +1,9 @@
+#+TITLE:  Trained Models
+
+The weights are available from [[https://drive.google.com/file/d/1WUUw2u0THd6avX6exADjgO5NeMTyieIt/view?usp=sharing][this google drive folder.]]
+|--------------+---------------------+--------------------------------------------------------------+---------------------------------------|
+| Model        | Training Datasets   | Notes                                                        | Config                                |
+|--------------+---------------------+--------------------------------------------------------------+---------------------------------------|
+| SuperSloMo   | NFS + Adobe + Vimeo | Trained for 150 epochs on all 3 datasets, bottleneck = CONV  | ../configs/superslomo_original.ini]]  |
+| SuperSloMo-R | NFS + Adobe + Vimeo | Trained for 150 epochs on all 3 datasets, bottleneck = CLSTM | ../configs/superslomo_recurrent.ini]] |
+|--------------+---------------------+--------------------------------------------------------------+---------------------------------------|

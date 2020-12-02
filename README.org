@@ -1,0 +1,100 @@
+#+TITLE: SuperSloMo Extended
+
+    [[https://pytorch.org][file:https://img.shields.io/badge/PyTorch%20-%23EE4C2C.svg]] [[https://github.com/psf/black][file:https://img.shields.io/badge/code%20style-black-000000.svg]]
+
+This is a PyTorch implementation of the CVPR 2018 paper, High Quality Estimation of Multiple Intermediate Frames for Video Interpolation. It also includes a few bonus features.
+
+Demo Videos
+
+The features it has are:
+
+1. Multi-GPU training out of the box.
+2. Improved performance on multiple benchmarks.
+3. Modular code - encoders/decoders/bottleneck are separated.
+4. Extensions to the original paper - by using a ConvLSTM/ConvGRU in the bottleneck.
+
+** Requirements
+This implementation was trained on 4 TitanX GPUs (12GB RAM), with the largest model taking 1 week to train.
+This code was tested with: python3, PyTorch 1.6, torchvision 0.7, CUDA 9.2, and CUDNN 7.6.3
+
+** Setup
+
+Set up a conda environment using [[configs/conda_env.yml]]
+*TODO* Provide Docker image alternative.
+
+** Running the code
+
+All the commands were run using the conda environment specified.
+
+#+BEGIN_SRC bash
+conda activate interp # environment name
+#+END_SRC
+
+*** Training
+#+BEGIN_SRC bash
+PROJECTDIR=<project dir>
+LOGDIR=/path/to/logs
+
+cd $PROJECTDIR
+
+...  # edit ssmr.ini to change config settings
+
+# Training
+CONFIG=configs/superslomo_original.ini # or superslomo_recurrent.ini
+EXPT_NAME=TrainExample01
+python scripts/main.py -c $CONFIG --expt=$EXPT_NAME --log=$LOGDIR
+#+END_SRC
+
+*** Testing Interpolation Results
+#+BEGIN_SRC bash
+PROJECTDIR=<project dir>
+LOGDIR=/path/to/logs
+
+cd $PROJECTDIR
+
+# Testing interpolation results
+CONFIG=configs/superslomo_eval.ini # don't forget to specify the DATASET in the config
+EXPT_NAME=TestAdobe
+python scripts/evaluate_interpolation_results.py -c $CONFIG --log=$LOGDIR --expt=$EXPT_NAME
+#+END_SRC
+
+*** Testing Optical Flow Results
+#+BEGIN_SRC bash
+PROJECTDIR=<project dir>
+LOGDIR=/path/to/logs
+
+cd $PROJECTDIR
+
+# Testing optical flow results
+CONFIG=configs/superslomo_eval.ini
+EXPT_NAME=TestOpticalFlow
+python scripts/evaluate_optical_flow_results.py -c $CONFIG --log=$LOGDIR
+#+END_SRC
+
+*** Visualizing Interpolation Results
+#+BEGIN_SRC bash
+# Visualizing the interpolation results
+
+IMGDIR=Adobe240fps/Clips/clip_00074
+OUTDIR=Results/
+echo "Processing: "$IMGDIR
+CONFIG=configs/superslomo_eval.ini
+
+python scripts/visualize_interpolation.py -c $CONFIG --expt=$EXPT_NAME --log=$LOGDIR --input_dir=$IMGDIR --output_dir=$OUTDIR --img_type=png --upsample_rate=8 --is_fps_240
+#+END_SRC
+
+** Performance Benchmarks
+Please refer to the tech report, and [[experiments/Notes.org]] for comparisons with the original paper, and other approaches.
+
+** Acknowledgements
+Many thanks to the author of the original paper (Huaizu Jiang) for clarifying several key implementation details.
+Thanks also to Prof. Erik Learned-Miller and Prof. Liangliang Cao (both at UMass Amherst) for their support and advice during this project.
+
+** Other Implementations
+This paper is quite popular, and has been previously implemented [[https://github.com/avinashpaliwal/Super-SloMo][here]], [[https://github.com/MayankSingal/Super-SlowMo][here]], and [[https://github.com/rmalav15/Super-SloMo][here]].
+
+** LICENSE
+*TODO*
+
+** Contact
+Please email me at sreenivas.vrao1@gmail.com if you have questions.

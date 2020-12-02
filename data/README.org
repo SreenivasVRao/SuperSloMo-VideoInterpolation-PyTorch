@@ -1,0 +1,27 @@
+#+TITLE: Datasets
+
+* Training
+** Adobe240FPS data
+Adobe videos were derived from the [[https://www.cs.ubc.ca/labs/imager/tr/2017/DeepVideoDeblurring/][Deep Video Deblurring]] paper's dataset.
+You will need to extract individual frames from the videos.
+The train and val splits used on this dataset is available at [[adobe/]]
+
+** NFS 240FPS data
+This dataset was retrieved from http://ci2cv.net/nfs/index.html
+Similar to the adobe dataset, you will need to extract individual frames.
+The train and val splits are available at [[nfs/]]
+We only used the train split for the highest performing model.
+
+** Vimeo-90K dataset
+This dataset was retrieved from http://toflow.csail.mit.edu/
+*NOTE* We used the septuplet split for training and evaluation to allow fair
+comparisons between the superslomo and superslomo-r models.
+
+* Evaluation
+
+1. The models were evaluated on Slowflow (full dataset), Vimeo (septuplet val split),
+and Sintel High-Frame Rate.
+2. For Sintel High-Frame Rate, we followed the original SuperSloMo paper settings,
+and interpolated 31 intermediate frames between adjacent frames.
+3. We additionally report optical flow estimation results on Sintel benchmark
+using the training split and the final pass.
