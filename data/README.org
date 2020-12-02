@@ -19,9 +19,6 @@ comparisons between the superslomo and superslomo-r models.
 
 * Evaluation
 
-1. The models were evaluated on Slowflow (full dataset), Vimeo (septuplet val split),
-and Sintel High-Frame Rate.
-2. For Sintel High-Frame Rate, we followed the original SuperSloMo paper settings,
-and interpolated 31 intermediate frames between adjacent frames.
-3. We additionally report optical flow estimation results on Sintel benchmark
-using the training split and the final pass.
+1. The models were evaluated on Slowflow (full dataset), Vimeo (septuplet val split), and Sintel High-Frame Rate.
+2. For Sintel High-Frame Rate, we followed the original SuperSloMo paper settings, and interpolated 31 intermediate frames between adjacent frames.
+3. We additionally report optical flow estimation results on Sintel benchmark using the training split and the final pass.
