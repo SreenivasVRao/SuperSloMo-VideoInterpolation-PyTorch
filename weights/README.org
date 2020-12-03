@@ -1,6 +1,6 @@
 #+TITLE:  Trained Models
 
-The weights are available from [[https://drive.google.com/file/d/1WUUw2u0THd6avX6exADjgO5NeMTyieIt/view?usp=sharing][this google drive folder.]]
+The weights are available from [[https://drive.google.com/drive/folders/1UIjm1hJunIWGa7Oe-IhvibcBKXXcnZN4?usp=sharing][this google drive folder.]]
 |--------------+---------------------+--------------------------------------------------------------+-----------------------------------------|
 | Model        | Training Datasets   | Notes                                                        | Config                                  |
 |--------------+---------------------+--------------------------------------------------------------+-----------------------------------------|
