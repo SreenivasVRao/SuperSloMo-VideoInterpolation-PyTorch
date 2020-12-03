@@ -2,16 +2,19 @@
 
     [[https://pytorch.org][file:https://img.shields.io/badge/PyTorch%20-%23EE4C2C.svg]] [[https://github.com/psf/black][file:https://img.shields.io/badge/code%20style-black-000000.svg]]
 
-This is a PyTorch implementation of the CVPR 2018 paper, High Quality Estimation of Multiple Intermediate Frames for Video Interpolation. It also includes a few bonus features.
+This is a PyTorch implementation of the CVPR 2018 paper, [[https://openaccess.thecvf.com/content_cvpr_2018/papers/Jiang_Super_SloMo_High_CVPR_2018_paper.pdf][High Quality Estimation of Multiple Intermediate Frames for Video Interpolation.]] It also includes a few bonus features.
 
-Demo Videos
+Here's a sneak peak!
 
-The features it has are:
+[[https://sreeni-demo-bucket.s3.amazonaws.com/teaser.mp4][file:data/teaser.png]]
+
+If you'd like to watch more examples and comparisons with other state of the art methods, [[http://svrao.ml/projects/video-interpolation/][visit the project page!]]
+
+The nice features in this implementation are:
 
 1. Multi-GPU training out of the box.
-2. Improved performance on multiple benchmarks.
-3. Modular code - encoders/decoders/bottleneck are separated.
-4. Extensions to the original paper - by using a ConvLSTM/ConvGRU in the bottleneck.
+2. Improved performance on [[file:experiments/Notes.org][multiple benchmarks as reported in the original paper.]]
+3. Extensions to the original paper - by using a ConvLSTM/ConvGRU in the bottleneck.
 
 ** Requirements
 This implementation was trained on 4 TitanX GPUs (12GB RAM), with the largest model taking 1 week to train.
